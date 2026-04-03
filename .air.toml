@@ -1,0 +1,28 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+cmd = "go build -o ./tmp/main ."
+bin = "./tmp/main"
+full_bin = "PORT=${PORT:-8080} ./tmp/main"
+include_ext = ["go", "json", "env"]
+exclude_dir = ["tmp", "vendor", ".git"]
+exclude_file = []
+follow_symlink = false
+log = "air-build-errors.log"
+delay = 1000
+stop_on_error = true
+send_interrupt = true
+kill_delay = "500ms"
+
+[color]
+main = "magenta"
+watcher = "cyan"
+build = "yellow"
+runner = "green"
+
+[log]
+time = true
+
+[misc]
+clean_on_exit = true

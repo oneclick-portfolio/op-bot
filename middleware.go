@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 	"runtime/debug"
+	"time"
 )
 
 func buildHandler(next http.Handler) http.Handler {
@@ -11,7 +12,43 @@ func buildHandler(next http.Handler) http.Handler {
 	handler = recoverMiddleware(handler)
 	handler = securityHeadersMiddleware(handler)
 	handler = corsMiddleware(handler)
+	handler = requestLoggerMiddleware(handler)
 	return handler
+}
+
+type responseRecorder struct {
+	http.ResponseWriter
+	status       int
+	bytesWritten int
+}
+
+func (rw *responseRecorder) WriteHeader(code int) {
+	rw.status = code
+	rw.ResponseWriter.WriteHeader(code)
+}
+
+func (rw *responseRecorder) Write(data []byte) (int, error) {
+	if rw.status == 0 {
+		rw.status = http.StatusOK
+	}
+	n, err := rw.ResponseWriter.Write(data)
+	rw.bytesWritten += n
+	return n, err
+}
+
+func requestLoggerMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		started := time.Now()
+		rw := &responseRecorder{ResponseWriter: w}
+		next.ServeHTTP(rw, r)
+
+		status := rw.status
+		if status == 0 {
+			status = http.StatusOK
+		}
+
+		log.Printf("request method=%s path=%s status=%d duration=%s bytes=%d remote=%s", r.Method, r.URL.Path, status, time.Since(started).Round(time.Millisecond), rw.bytesWritten, r.RemoteAddr)
+	})
 }
 
 func corsMiddleware(next http.Handler) http.Handler {
@@ -68,7 +105,7 @@ func recoverMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if rec := recover(); rec != nil {
-				log.Printf("panic recovered: %v\n%s", rec, debug.Stack())
+				log.Printf("panic recovered method=%s path=%s err=%v\n%s", r.Method, r.URL.Path, rec, debug.Stack())
 				writeError(w, http.StatusInternalServerError, "Internal server error")
 			}
 		}()

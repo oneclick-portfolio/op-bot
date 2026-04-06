@@ -3,9 +3,10 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"os"
+	"io"
+	"net/http"
+	"net/url"
 	"path"
-	"path/filepath"
 	"strings"
 )
 
@@ -13,18 +14,6 @@ type fileEntry struct {
 	Path     string
 	Content  []byte
 	Encoding string
-}
-
-func readTextFile(relativePath string) (string, error) {
-	data, err := os.ReadFile(filepath.Join(frontendDir, relativePath))
-	if err != nil {
-		return "", err
-	}
-	return string(data), nil
-}
-
-func readBinaryFile(relativePath string) ([]byte, error) {
-	return os.ReadFile(filepath.Join(frontendDir, relativePath))
 }
 
 func buildWorkflowYaml() string {
@@ -92,65 +81,195 @@ func transformThemeIndex(indexHTML string) string {
 }
 
 func buildThemeBundle(theme string, resumeData any) ([]fileEntry, error) {
-	selection := themeFiles[theme]
-
-	indexHTML, err := readTextFile(selection["index"])
-	if err != nil {
-		return nil, err
-	}
-	appJS, err := readTextFile(selection["app"])
-	if err != nil {
-		return nil, err
-	}
-	styleCSS, err := readTextFile(selection["style"])
-	if err != nil {
-		return nil, err
-	}
-	configJS, err := readTextFile("config.js")
-	if err != nil {
-		return nil, err
-	}
-	rxresumeJS, err := readTextFile("src/rxresume.js")
+	entries, err := fetchThemeFiles(theme)
 	if err != nil {
 		return nil, err
 	}
 
-	var resumeJSON string
+	sharedFiles := map[string]string{
+		"config.js":       "config.js",
+		"src/rxresume.js": "src/rxresume.js",
+		"favicon.svg":     "favicon.svg",
+		"favicon.ico":     "favicon.ico",
+	}
+
+	for source, destination := range sharedFiles {
+		data, err := loadSharedAsset(source)
+		if err != nil {
+			if destination == "favicon.svg" || destination == "favicon.ico" {
+				continue
+			}
+			return nil, err
+		}
+		entries = append(entries, fileEntry{Path: destination, Content: data})
+	}
+
 	if resumeData != nil {
-		data, err := json.MarshalIndent(resumeData, "", "  ")
+		pretty, err := json.MarshalIndent(resumeData, "", "  ")
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("unable to serialize resume data: %w", err)
 		}
-		resumeJSON = string(data) + "\n"
-	} else {
-		resumeJSON, err = readTextFile("resume/Reactive Resume.json")
-		if err != nil {
-			return nil, err
-		}
+		pretty = append(pretty, '\n')
+		entries = append(entries, fileEntry{Path: "resume/Reactive Resume.json", Content: pretty})
 	}
 
-	faviconSVG, err := readTextFile("favicon.svg")
+	entries = append(entries,
+		fileEntry{Path: ".github/workflows/deploy-pages.yml", Content: []byte(buildWorkflowYaml())},
+		fileEntry{Path: "README.md", Content: []byte(buildRepositoryReadme(getThemeLabel(theme), "https://<username>.github.io/<repo>/"))},
+	)
+
+	return entries, nil
+}
+
+func fetchThemeFiles(theme string) ([]fileEntry, error) {
+	files, err := fetchThemeDirectory("themes/" + theme)
 	if err != nil {
 		return nil, err
 	}
-	faviconICO, err := readBinaryFile("favicon.ico")
+
+	entries := make([]fileEntry, 0, len(files))
+	for _, f := range files {
+		destination := strings.TrimPrefix(f.Path, "themes/"+theme+"/")
+		if destination == "" {
+			continue
+		}
+
+		content := f.Content
+		if path.Base(destination) == "index.html" {
+			content = []byte(transformThemeIndex(string(content)))
+			destination = "index.html"
+		}
+
+		entries = append(entries, fileEntry{
+			Path:    destination,
+			Content: content,
+		})
+	}
+
+	if len(entries) == 0 {
+		return nil, fmt.Errorf("theme %q has no deployable files", theme)
+	}
+
+	return entries, nil
+}
+
+func fetchThemeDirectory(dirPath string) ([]fileEntry, error) {
+	parts := strings.Split(dirPath, "/")
+	for i, p := range parts {
+		parts[i] = url.PathEscape(p)
+	}
+	escapedPath := strings.Join(parts, "/")
+	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/contents/%s?ref=%s", themeSourceRepo, escapedPath, url.QueryEscape(themeSourceRef))
+	req, err := http.NewRequest(http.MethodGet, apiURL, nil)
 	if err != nil {
 		return nil, err
 	}
+	req.Header.Set("Accept", "application/vnd.github+json")
 
-	styleFileName := path.Base(selection["style"])
-	pagesURLPlaceholder := "https://<username>.github.io/<repository>/"
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("unable to read theme directory %q from %s: %w", dirPath, themeSourceRepo, err)
+	}
+	defer resp.Body.Close()
 
-	return []fileEntry{
-		{Path: "index.html", Content: []byte(transformThemeIndex(indexHTML)), Encoding: "utf-8"},
-		{Path: "app.js", Content: []byte(appJS), Encoding: "utf-8"},
-		{Path: styleFileName, Content: []byte(styleCSS), Encoding: "utf-8"},
-		{Path: "config.js", Content: []byte(configJS), Encoding: "utf-8"},
-		{Path: "src/rxresume.js", Content: []byte(rxresumeJS), Encoding: "utf-8"},
-		{Path: "resume/Reactive Resume.json", Content: []byte(resumeJSON), Encoding: "utf-8"},
-		{Path: "favicon.svg", Content: []byte(faviconSVG), Encoding: "utf-8"},
-		{Path: "favicon.ico", Content: faviconICO, Encoding: "binary"},
-		{Path: ".github/workflows/deploy-pages.yml", Content: []byte(buildWorkflowYaml()), Encoding: "utf-8"},
-		{Path: "README.md", Content: []byte(buildRepositoryReadme(getThemeLabel(theme), pagesURLPlaceholder)), Encoding: "utf-8"},
-	}, nil
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("unable to read theme directory %q from %s: status %d: %s", dirPath, themeSourceRepo, resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	type contentItem struct {
+		Path        string `json:"path"`
+		Type        string `json:"type"`
+		DownloadURL string `json:"download_url"`
+	}
+
+	var items []contentItem
+	if err := json.NewDecoder(resp.Body).Decode(&items); err != nil {
+		return nil, fmt.Errorf("unable to decode theme directory listing for %q: %w", dirPath, err)
+	}
+
+	entries := make([]fileEntry, 0, len(items))
+	for _, item := range items {
+		switch item.Type {
+		case "dir":
+			nested, err := fetchThemeDirectory(item.Path)
+			if err != nil {
+				return nil, err
+			}
+			entries = append(entries, nested...)
+		case "file":
+			if item.DownloadURL == "" {
+				continue
+			}
+			content, err := fetchRemoteFile(item.DownloadURL)
+			if err != nil {
+				return nil, fmt.Errorf("unable to fetch theme file %q: %w", item.Path, err)
+			}
+			entries = append(entries, fileEntry{Path: item.Path, Content: content})
+		}
+	}
+
+	return entries, nil
+}
+
+func fetchRemoteFile(rawURL string) ([]byte, error) {
+	resp, err := http.Get(rawURL)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("status %d", resp.StatusCode)
+	}
+
+	return io.ReadAll(resp.Body)
+}
+
+func loadSharedAsset(relPath string) ([]byte, error) {
+	data, err := fetchRepoFile(relPath)
+	if err != nil {
+		return nil, fmt.Errorf("unable to load shared asset %q: %w", relPath, err)
+	}
+	return data, nil
+}
+
+func fetchRepoFile(repoPath string) ([]byte, error) {
+	parts := strings.Split(repoPath, "/")
+	for i, p := range parts {
+		parts[i] = url.PathEscape(p)
+	}
+	escapedPath := strings.Join(parts, "/")
+
+	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/contents/%s?ref=%s", themeSourceRepo, escapedPath, url.QueryEscape(themeSourceRef))
+	req, err := http.NewRequest(http.MethodGet, apiURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("unable to read source file %q from %s: %w", repoPath, themeSourceRepo, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("unable to read source file %q from %s: status %d: %s", repoPath, themeSourceRepo, resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	var item struct {
+		Type        string `json:"type"`
+		DownloadURL string `json:"download_url"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&item); err != nil {
+		return nil, fmt.Errorf("unable to decode source file metadata for %q: %w", repoPath, err)
+	}
+
+	if item.Type != "file" || item.DownloadURL == "" {
+		return nil, fmt.Errorf("source path %q is not a downloadable file", repoPath)
+	}
+
+	return fetchRemoteFile(item.DownloadURL)
 }

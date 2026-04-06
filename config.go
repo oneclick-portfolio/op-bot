@@ -13,15 +13,16 @@ import (
 
 var (
 	backendDir       string
-	frontendDir      string
 	port             string
 	httpAddr         string
 	appClientID      string
 	appClientSecret  string
 	appInstallURL    string
+	oauthCallbackURL string
 	corsOrigins      []string
 	corsCredentials  bool
-	schemaCompiler   *jsonschema.Compiler
+	themeSourceRepo  string
+	themeSourceRef   string
 	resumeSchema     *jsonschema.Schema
 	resumeSchemaOnce sync.Once
 	resumeSchemaErr  error
@@ -60,10 +61,6 @@ func init() {
 	exe, _ := os.Executable()
 	exeDir := filepath.Dir(exe)
 	backendDir = exeDir
-	if cwd, err := os.Getwd(); err == nil {
-		backendDir = cwd
-	}
-	frontendDir = filepath.Join(backendDir, "..", "frontend")
 
 	loadDotEnv(backendDir, exeDir)
 
@@ -74,6 +71,18 @@ func init() {
 	appClientID = strings.TrimSpace(os.Getenv("APP_CLIENT_ID"))
 	appClientSecret = strings.TrimSpace(os.Getenv("APP_CLIENT_SECRET"))
 	appInstallURL = normalizeInstallURL(strings.TrimSpace(os.Getenv("APP_INSTALL_URL")))
+	oauthCallbackURL = strings.TrimSpace(os.Getenv("OAUTH_CALLBACK_URL"))
+	themeSourceRepo = strings.TrimSpace(os.Getenv("THEME_SOURCE_REPO"))
+	if themeSourceRepo == "" {
+		themeSourceRepo = "oneclick-portfolio/awesome-github-portfolio"
+	}
+	themeSourceRef = strings.TrimSpace(os.Getenv("THEME_SOURCE_REF"))
+	if themeSourceRef == "" {
+		themeSourceRef = "main"
+	}
+	if oauthCallbackURL == "" && !isProduction() {
+		oauthCallbackURL = "http://localhost:" + port + "/auth/github/callback"
+	}
 	httpAddr = ":" + port
 
 	corsOrigins = parseCSVEnv("CORS_ALLOWED_ORIGINS")
@@ -83,6 +92,8 @@ func init() {
 			"http://127.0.0.1:3000",
 			"http://localhost:5173",
 			"http://127.0.0.1:5173",
+			"http://localhost:4173",
+			"http://127.0.0.1:4173",
 		}
 	}
 	corsCredentials = true

@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 )
@@ -69,6 +70,9 @@ func handleAuthGitHubStart(w http.ResponseWriter, r *http.Request) {
 	q.Set("client_id", appClientID)
 	q.Set("state", state)
 	q.Set("allow_signup", "true")
+	if oauthCallbackURL != "" {
+		q.Set("redirect_uri", oauthCallbackURL)
+	}
 	authURL.RawQuery = q.Encode()
 
 	http.Redirect(w, r, authURL.String(), http.StatusFound)
@@ -107,6 +111,9 @@ func handleAuthGitHubCallback(w http.ResponseWriter, r *http.Request) {
 		"client_secret": appClientSecret,
 		"code":          code,
 		"state":         state,
+	}
+	if oauthCallbackURL != "" {
+		tokenPayload["redirect_uri"] = oauthCallbackURL
 	}
 	tokenBody, _ := json.Marshal(tokenPayload)
 
@@ -199,19 +206,24 @@ func handleAPIGitHubLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleAPIResumeValidate(w http.ResponseWriter, r *http.Request) {
+	log.Printf("resume.validate start remote=%s", r.RemoteAddr)
+
 	var body struct {
 		ResumeData any `json:"resumeData"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		log.Printf("resume.validate invalid_json remote=%s err=%v", r.RemoteAddr, err)
 		writeError(w, http.StatusBadRequest, "Invalid JSON body")
 		return
 	}
 
 	result := validateResumeData(body.ResumeData)
 	if !result.Valid {
+		log.Printf("resume.validate failed remote=%s errors=%d", r.RemoteAddr, len(result.Errors))
 		writeError(w, http.StatusBadRequest, "Resume schema validation failed", result.Errors...)
 		return
 	}
+	log.Printf("resume.validate success remote=%s", r.RemoteAddr)
 	writeJSON(w, http.StatusOK, result)
 }
 

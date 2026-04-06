@@ -2,15 +2,24 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"fmt"
 	"io"
+	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
+
+const resumeSchemaURL = "https://rxresu.me/schema.json"
+
+const resumeSchemaFetchTimeout = 5 * time.Second
 
 type validationResult struct {
 	Valid  bool     `json:"valid"`
@@ -19,35 +28,109 @@ type validationResult struct {
 
 func getResumeSchema() (*jsonschema.Schema, error) {
 	resumeSchemaOnce.Do(func() {
-		schemaCompiler = jsonschema.NewCompiler()
-		schemaPath := filepath.Join(backendDir, "tests", "rxresume.schema.json")
+		schemaCompiler := jsonschema.NewCompiler()
 
-		var schemaData []byte
-		schemaData, resumeSchemaErr = os.ReadFile(schemaPath)
-		if resumeSchemaErr != nil {
-			resp, err := http.Get("https://rxresu.me/schema.json")
-			if err != nil {
+		// Mirror the official flow: fetch schema JSON, then compile validator from it.
+		schemaData, err := fetchRemoteResumeSchema()
+		if err != nil {
+			if isNetworkError(err) {
+				log.Printf("resume.schema remote_fetch_failed url=%s err=%v; using local fallback", resumeSchemaURL, err)
+				schemaData, err = loadLocalResumeSchema()
+				if err != nil {
+					resumeSchemaErr = fmt.Errorf("schema fetch failed and local fallback failed: %w", err)
+					log.Printf("resume.schema local_fallback_failed err=%v", resumeSchemaErr)
+					return
+				}
+				log.Printf("resume.schema local_fallback_loaded bytes=%d", len(schemaData))
+			} else {
 				resumeSchemaErr = fmt.Errorf("unable to load resume schema: %w", err)
+				log.Printf("resume.schema load_failed err=%v", resumeSchemaErr)
 				return
 			}
-			defer resp.Body.Close()
-			if resp.StatusCode != http.StatusOK {
-				resumeSchemaErr = fmt.Errorf("unable to load resume schema: HTTP %d", resp.StatusCode)
-				return
-			}
-			schemaData, resumeSchemaErr = io.ReadAll(resp.Body)
-			if resumeSchemaErr != nil {
-				return
-			}
+		} else {
+			log.Printf("resume.schema remote_loaded url=%s bytes=%d", resumeSchemaURL, len(schemaData))
 		}
 
-		if err := schemaCompiler.AddResource("schema.json", bytes.NewReader(schemaData)); err != nil {
-			resumeSchemaErr = err
+		doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(schemaData))
+		if err != nil {
+			resumeSchemaErr = fmt.Errorf("unable to parse resume schema: %w", err)
 			return
 		}
-		resumeSchema, resumeSchemaErr = schemaCompiler.Compile("schema.json")
+
+		// Use the official URL as resource key so relative $refs resolve correctly.
+		if err := schemaCompiler.AddResource(resumeSchemaURL, doc); err != nil {
+			resumeSchemaErr = fmt.Errorf("unable to register resume schema: %w", err)
+			return
+		}
+
+		resumeSchema, resumeSchemaErr = schemaCompiler.Compile(resumeSchemaURL)
+		if resumeSchemaErr != nil {
+			resumeSchemaErr = fmt.Errorf("unable to compile resume schema from %s: %w", resumeSchemaURL, resumeSchemaErr)
+			log.Printf("resume.schema compile_failed err=%v", resumeSchemaErr)
+			return
+		}
+
+		log.Printf("resume.schema compile_success")
 	})
 	return resumeSchema, resumeSchemaErr
+}
+
+func fetchRemoteResumeSchema() ([]byte, error) {
+	client := &http.Client{Timeout: resumeSchemaFetchTimeout}
+	resp, err := client.Get(resumeSchemaURL)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unable to load resume schema: HTTP %d", resp.StatusCode)
+	}
+
+	schemaData, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("unable to read resume schema: %w", err)
+	}
+
+	return schemaData, nil
+}
+
+func loadLocalResumeSchema() ([]byte, error) {
+	candidates := []string{
+		filepath.Join(backendDir, "schema", "v5.json"),
+		filepath.Join(backendDir, "..", "schema", "v5.json"),
+		filepath.Join("schema", "v5.json"),
+	}
+
+	var lastErr error
+	for _, candidate := range candidates {
+		data, err := os.ReadFile(candidate)
+		if err == nil {
+			return data, nil
+		}
+		lastErr = err
+	}
+
+	if lastErr == nil {
+		lastErr = errors.New("local schema not found")
+	}
+
+	return nil, fmt.Errorf("unable to read local schema file schema/v5.json from known paths: %w", lastErr)
+}
+
+func isNetworkError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		return true
+	}
+	var dnsErr *net.DNSError
+	return errors.As(err, &dnsErr)
 }
 
 func formatSchemaErrors(err error) []string {

@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Op-Bot API",
-    "description": "Portfolio theme deployer with GitHub OAuth and resume validation",
+    "description": "Backend API for portfolio deployment with GitHub OAuth and resume validation. Runs as a microservice separate from the frontend.",
     "version": "1.0.0"
   },
   "servers": [

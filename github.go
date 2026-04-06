@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -194,11 +195,6 @@ func createRepositoryAndDeployTheme(token, userLogin string, params deployParams
 		reusedExisting = true
 	}
 
-	branch := "main"
-	if b, ok := repo["default_branch"].(string); ok && b != "" {
-		branch = b
-	}
-
 	if params.ResumeData != nil {
 		result := validateResumeData(params.ResumeData)
 		if !result.Valid {
@@ -210,15 +206,21 @@ func createRepositoryAndDeployTheme(token, userLogin string, params deployParams
 		}
 	}
 
-	files, err := buildThemeBundle(theme, params.ResumeData)
+	bundle, err := buildThemeBundle(theme, params.ResumeData)
 	if err != nil {
-		return nil, err
+		return nil, &ghError{Message: fmt.Sprintf("Unable to build %s theme bundle: %v", theme, err), Status: http.StatusInternalServerError}
 	}
-	for _, file := range files {
-		if err := uploadFileToRepo(token, userLogin, repositoryName, branch, file.Path, file.Content); err != nil {
-			return nil, err
+	log.Printf("deploy.theme bundle_ready theme=%s source=%s@%s files=%d", theme, themeSourceRepo, themeSourceRef, len(bundle))
+
+	for _, file := range bundle {
+		if err := uploadFileToRepo(token, userLogin, repositoryName, "main", file.Path, file.Content); err != nil {
+			if ghErr, ok := err.(*ghError); ok {
+				return nil, ghErr
+			}
+			return nil, &ghError{Message: fmt.Sprintf("Unable to upload %s: %v", file.Path, err), Status: http.StatusBadGateway}
 		}
 	}
+	log.Printf("deploy.theme uploaded theme=%s repo=%s/%s files=%d", theme, userLogin, repositoryName, len(bundle))
 
 	_, _ = ghRequest(token, fmt.Sprintf("/repos/%s/%s/pages", userLogin, repositoryName), http.MethodPost, map[string]any{"build_type": "workflow"})
 

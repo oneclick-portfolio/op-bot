@@ -1,6 +1,9 @@
 package main
 
 import (
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -26,6 +29,8 @@ var (
 	resumeSchema     *jsonschema.Schema
 	resumeSchemaOnce sync.Once
 	resumeSchemaErr  error
+	appID            string
+	appPrivateKey    *rsa.PrivateKey
 )
 
 const (
@@ -79,6 +84,15 @@ func init() {
 	themeSourceRef = strings.TrimSpace(os.Getenv("THEME_SOURCE_REF"))
 	if themeSourceRef == "" {
 		themeSourceRef = "main"
+	}
+	appID = strings.TrimSpace(os.Getenv("APP_ID"))
+	if pkPEM := strings.TrimSpace(os.Getenv("APP_PRIVATE_KEY")); pkPEM != "" {
+		pkPEM = strings.ReplaceAll(pkPEM, `\n`, "\n")
+		if block, _ := pem.Decode([]byte(pkPEM)); block != nil {
+			if key, err := x509.ParsePKCS1PrivateKey(block.Bytes); err == nil {
+				appPrivateKey = key
+			}
+		}
 	}
 	if oauthCallbackURL == "" && !isProduction() {
 		oauthCallbackURL = "http://localhost:" + port + "/auth/github/callback"

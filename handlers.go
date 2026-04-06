@@ -186,6 +186,11 @@ func handleAPIGitHubMe(w http.ResponseWriter, r *http.Request) {
 		installURL = appInstallURL
 	}
 
+	var repositorySelection any
+	if chosenInstallation != nil {
+		repositorySelection = chosenInstallation["repository_selection"]
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"user": map[string]any{
 			"login":     user["login"],
@@ -193,9 +198,10 @@ func handleAPIGitHubMe(w http.ResponseWriter, r *http.Request) {
 			"avatarUrl": user["avatar_url"],
 		},
 		"githubApp": map[string]any{
-			"installed":      chosenInstallation != nil,
-			"installationId": installationID,
-			"installUrl":     installURL,
+			"installed":           chosenInstallation != nil,
+			"installationId":      installationID,
+			"installUrl":          installURL,
+			"repositorySelection": repositorySelection,
 		},
 	})
 }
@@ -259,7 +265,12 @@ func handleAPIGitHubDeploy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := createRepositoryAndDeployTheme(token, login, params)
+	var installationID int64
+	if id, ok := chosenInstallation["id"].(float64); ok {
+		installationID = int64(id)
+	}
+
+	result, err := createRepositoryAndDeployTheme(token, login, installationID, params)
 	if err != nil {
 		code := http.StatusBadRequest
 		if ghErr, ok := err.(*ghError); ok && ghErr.Status != 0 {

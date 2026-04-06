@@ -146,6 +146,73 @@ func uploadFileToRepo(token, owner, repo, branch, filePath string, content []byt
 	return err
 }
 
+func commitAllFiles(token, owner, repo, branch, message string, files []fileEntry) error {
+	refResp, err := ghRequest(token, fmt.Sprintf("/repos/%s/%s/git/ref/heads/%s", owner, repo, url.PathEscape(branch)), http.MethodGet, nil)
+	if err != nil {
+		return fmt.Errorf("unable to get branch ref: %w", err)
+	}
+	refObj, _ := refResp["object"].(map[string]any)
+	parentSha, _ := refObj["sha"].(string)
+	if parentSha == "" {
+		return fmt.Errorf("unable to resolve HEAD sha for branch %s", branch)
+	}
+
+	commitResp, err := ghRequest(token, fmt.Sprintf("/repos/%s/%s/git/commits/%s", owner, repo, parentSha), http.MethodGet, nil)
+	if err != nil {
+		return fmt.Errorf("unable to get parent commit: %w", err)
+	}
+	treeObj, _ := commitResp["tree"].(map[string]any)
+	baseTreeSha, _ := treeObj["sha"].(string)
+
+	treeItems := make([]map[string]any, 0, len(files))
+	for _, f := range files {
+		blobResp, err := ghRequest(token, fmt.Sprintf("/repos/%s/%s/git/blobs", owner, repo), http.MethodPost, map[string]any{
+			"content":  base64.StdEncoding.EncodeToString(f.Content),
+			"encoding": "base64",
+		})
+		if err != nil {
+			return fmt.Errorf("unable to create blob for %s: %w", f.Path, err)
+		}
+		blobSha, _ := blobResp["sha"].(string)
+
+		treeItems = append(treeItems, map[string]any{
+			"path": f.Path,
+			"mode": "100644",
+			"type": "blob",
+			"sha":  blobSha,
+		})
+	}
+
+	treeResp, err := ghRequest(token, fmt.Sprintf("/repos/%s/%s/git/trees", owner, repo), http.MethodPost, map[string]any{
+		"base_tree": baseTreeSha,
+		"tree":      treeItems,
+	})
+	if err != nil {
+		return fmt.Errorf("unable to create tree: %w", err)
+	}
+	newTreeSha, _ := treeResp["sha"].(string)
+
+	newCommitResp, err := ghRequest(token, fmt.Sprintf("/repos/%s/%s/git/commits", owner, repo), http.MethodPost, map[string]any{
+		"message": message,
+		"tree":    newTreeSha,
+		"parents": []string{parentSha},
+	})
+	if err != nil {
+		return fmt.Errorf("unable to create commit: %w", err)
+	}
+	newCommitSha, _ := newCommitResp["sha"].(string)
+
+	_, err = ghRequest(token, fmt.Sprintf("/repos/%s/%s/git/refs/heads/%s", owner, repo, url.PathEscape(branch)), http.MethodPatch, map[string]any{
+		"sha":   newCommitSha,
+		"force": false,
+	})
+	if err != nil {
+		return fmt.Errorf("unable to update branch ref: %w", err)
+	}
+
+	return nil
+}
+
 type deployParams struct {
 	Theme          string `json:"theme"`
 	RepositoryName string `json:"repositoryName"`
@@ -161,7 +228,7 @@ type deployResult struct {
 	InstallationID any    `json:"installationId,omitempty"`
 }
 
-func createRepositoryAndDeployTheme(token, userLogin string, params deployParams) (*deployResult, error) {
+func createRepositoryAndDeployTheme(userToken, userLogin string, installationID int64, params deployParams) (*deployResult, error) {
 	theme := params.Theme
 	repositoryName := normalizeRepoName(params.RepositoryName)
 
@@ -172,7 +239,7 @@ func createRepositoryAndDeployTheme(token, userLogin string, params deployParams
 		return nil, &ghError{Message: "Repository name is required.", Status: http.StatusBadRequest}
 	}
 
-	repo, err := ghRequest(token, "/user/repos", http.MethodPost, map[string]any{
+	repo, err := ghRequest(userToken, "/user/repos", http.MethodPost, map[string]any{
 		"name":        repositoryName,
 		"private":     params.PrivateRepo,
 		"auto_init":   true,
@@ -185,7 +252,7 @@ func createRepositoryAndDeployTheme(token, userLogin string, params deployParams
 		if !shouldTryExisting {
 			return nil, err
 		}
-		repo, err = ghRequest(token, fmt.Sprintf("/repos/%s/%s", userLogin, repositoryName), http.MethodGet, nil)
+		repo, err = ghRequest(userToken, fmt.Sprintf("/repos/%s/%s", userLogin, repositoryName), http.MethodGet, nil)
 		if err != nil {
 			return nil, &ghError{
 				Message: fmt.Sprintf("Repository creation failed: %s. If the repository already exists, ensure the GitHub App is installed on it. If it does not exist, grant the app repository Administration (write) and install it for all repositories or create the repo manually first.", ghErr.Message),
@@ -206,23 +273,29 @@ func createRepositoryAndDeployTheme(token, userLogin string, params deployParams
 		}
 	}
 
-	bundle, err := buildThemeBundle(theme, params.ResumeData)
+	bundle, err := buildThemeBundle(theme, userLogin, repositoryName, params.ResumeData)
 	if err != nil {
 		return nil, &ghError{Message: fmt.Sprintf("Unable to build %s theme bundle: %v", theme, err), Status: http.StatusInternalServerError}
 	}
 	log.Printf("deploy.theme bundle_ready theme=%s source=%s@%s files=%d", theme, themeSourceRepo, themeSourceRef, len(bundle))
 
-	for _, file := range bundle {
-		if err := uploadFileToRepo(token, userLogin, repositoryName, "main", file.Path, file.Content); err != nil {
-			if ghErr, ok := err.(*ghError); ok {
-				return nil, ghErr
-			}
-			return nil, &ghError{Message: fmt.Sprintf("Unable to upload %s: %v", file.Path, err), Status: http.StatusBadGateway}
-		}
+	instToken, err := getInstallationToken(installationID)
+	if err != nil {
+		return nil, &ghError{Message: fmt.Sprintf("Unable to obtain bot installation token: %v", err), Status: http.StatusInternalServerError}
 	}
-	log.Printf("deploy.theme uploaded theme=%s repo=%s/%s files=%d", theme, userLogin, repositoryName, len(bundle))
+	log.Printf("deploy.bot_token_ready installation_id=%d", installationID)
+	uploadToken := instToken
 
-	_, _ = ghRequest(token, fmt.Sprintf("/repos/%s/%s/pages", userLogin, repositoryName), http.MethodPost, map[string]any{"build_type": "workflow"})
+	commitMsg := fmt.Sprintf("chore: deploy %s theme portfolio", theme)
+	if err := commitAllFiles(uploadToken, userLogin, repositoryName, "main", commitMsg, bundle); err != nil {
+		if ghErr, ok := err.(*ghError); ok {
+			return nil, ghErr
+		}
+		return nil, &ghError{Message: fmt.Sprintf("Unable to commit theme files: %v", err), Status: http.StatusBadGateway}
+	}
+	log.Printf("deploy.theme committed theme=%s repo=%s/%s files=%d", theme, userLogin, repositoryName, len(bundle))
+
+	_, _ = ghRequest(userToken, fmt.Sprintf("/repos/%s/%s/pages", userLogin, repositoryName), http.MethodPost, map[string]any{"build_type": "workflow"})
 
 	htmlURL, _ := repo["html_url"].(string)
 	fullName, _ := repo["full_name"].(string)

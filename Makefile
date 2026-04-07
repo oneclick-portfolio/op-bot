@@ -4,11 +4,14 @@ PORT   ?= 8080
 BINARY ?= op-bot
 AIR    ?= $(shell command -v air 2>/dev/null || echo "$(shell go env GOPATH)/bin/air")
 
-.PHONY: help dev test build run stop clean
+.PHONY: help dev test build run stop clean env
 
 help: ## Show backend targets
 	@grep -E '^[a-zA-Z_-]+:.*##' $(MAKEFILE_LIST) | \
 	  awk 'BEGIN {FS = ":.*##"}; {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'
+
+env: ## Copy .env.example to .env
+	@if [ ! -f .env ]; then cp .env.example .env && echo "✓ Created .env from .env.example"; else echo "✗ .env already exists"; fi
 
 dev: ## Run server with hot reload (requires air)
 	@echo "Serving on http://localhost:$(PORT)"

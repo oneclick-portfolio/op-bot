@@ -16,13 +16,20 @@ import (
 var openapiSpec []byte
 
 func setCookie(w http.ResponseWriter, name, value string, maxAge int, secure bool) {
+	sameSite := http.SameSiteLaxMode
+	if secure {
+		// In production the frontend (oneclick-portfolio.github.io) and backend
+		// (vercel.app) are on different top-level domains. SameSite=None;Secure
+		// is required so cross-site fetch requests include the cookie.
+		sameSite = http.SameSiteNoneMode
+	}
 	cookie := &http.Cookie{
 		Name:     name,
 		Value:    value,
 		Path:     "/",
 		MaxAge:   maxAge,
 		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
+		SameSite: sameSite,
 		Secure:   secure,
 	}
 	http.SetCookie(w, cookie)

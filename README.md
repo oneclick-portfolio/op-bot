@@ -21,12 +21,21 @@ Copy `.env.example` to `.env` and set:
 
 - `APP_CLIENT_ID`
 - `APP_CLIENT_SECRET`
+- `APP_ID` for repository deployment and bot commits
+- `APP_PRIVATE_KEY` for repository deployment and bot commits
+- `OAUTH_CALLBACK_URL` in production; optional in local development, defaults to `http://localhost:8080/auth/github/callback` in non-production
+- `CORS_ALLOWED_ORIGINS` in production when frontend is on a different origin
+- `NODE_ENV=production` when running outside Vercel in production
 - `APP_INSTALL_URL` (optional)
-- `OAUTH_CALLBACK_URL` (optional, defaults to `http://localhost:8080/auth/github/callback` in non-production)
 - `PORT` (optional, default `8080`)
-- `CORS_ALLOWED_ORIGINS` (optional, comma-separated, required when frontend is on different origin)
 - `THEME_SOURCE_REPO` (optional, default `oneclick-portfolio/awesome-github-portfolio`)
 - `THEME_SOURCE_REF` (optional, default `main`)
+
+Notes:
+
+- On Vercel, `VERCEL_ENV=production` is provided automatically, so you normally do not need to set `NODE_ENV` there.
+- If you only need GitHub sign-in and `/api/github/me`, `APP_CLIENT_ID`, `APP_CLIENT_SECRET`, `OAUTH_CALLBACK_URL`, and `CORS_ALLOWED_ORIGINS` are the critical settings.
+- If you also need `/api/github/deploy`, `APP_ID` and `APP_PRIVATE_KEY` are required.
 
 ```bash
 cp .env.example .env
@@ -63,6 +72,17 @@ Example with explicit browser origins (required for frontend on separate port/do
 
 ```bash
 CORS_ALLOWED_ORIGINS=http://localhost:4173,http://localhost:5173,https://portfolios.example.com go run .
+```
+
+Example production configuration for your current deployment:
+
+```bash
+APP_CLIENT_ID=...
+APP_CLIENT_SECRET=...
+APP_ID=...
+APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----"
+OAUTH_CALLBACK_URL=https://op-bot-mauve.vercel.app/auth/github/callback
+CORS_ALLOWED_ORIGINS=https://oneclick-portfolio.github.io
 ```
 
 ## Architecture
@@ -110,6 +130,7 @@ Swagger UI available at: http://localhost:8080/swagger
 ## Production Notes
 
 - **CORS is required**: Frontend and backend must communicate across origins. Set `CORS_ALLOWED_ORIGINS` to your frontend domain(s).
+- **Production mode matters**: secure cross-site auth cookies are enabled when `NODE_ENV=production` or `VERCEL_ENV=production`.
 - **Security headers**: Applied on all responses via Helmet middleware.
 - **Timeouts**: HTTP server runs with read/write/idle/header timeouts for safer production behavior.
 - **No static assets**: Backend is API-only; frontend is deployed independently.

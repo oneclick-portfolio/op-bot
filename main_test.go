@@ -22,7 +22,7 @@ func parseErrorResponse(t *testing.T, rr *httptest.ResponseRecorder) apiErrorRes
 
 func TestValidateResumeData(t *testing.T) {
 	t.Skip("Skipping - requires external schema fetch from rxresu.me")
-	
+
 	var resumeData any
 	// Use a minimal valid resume structure for testing
 	resumeJSON := `{
@@ -225,6 +225,21 @@ func TestNewServerMuxSwaggerSpecRoute(t *testing.T) {
 	}
 }
 
+func TestNewServerMuxGitHubReposRoute(t *testing.T) {
+	mux := newServerMux()
+	req := httptest.NewRequest(http.MethodGet, "/api/github/repos", nil)
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", rr.Code)
+	}
+	payload := parseErrorResponse(t, rr)
+	if payload.Error.Code != "UNAUTHORIZED" {
+		t.Fatalf("error code = %q, want UNAUTHORIZED", payload.Error.Code)
+	}
+}
+
 func TestNormalizeInstallURL(t *testing.T) {
 	tests := []struct {
 		input    string
@@ -261,4 +276,3 @@ func TestValidateTestFile(t *testing.T) {
 		t.Fatalf("schema validation failed: \n- %s", strings.Join(result.Errors, "\n- "))
 	}
 }
-

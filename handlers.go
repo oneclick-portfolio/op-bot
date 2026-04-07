@@ -213,6 +213,89 @@ func handleAPIGitHubMe(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func handleAPIGitHubRepos(w http.ResponseWriter, r *http.Request) {
+	token := getCookie(r, oauthTokenCookie)
+	if token == "" {
+		writeError(w, http.StatusUnauthorized, "Not connected")
+		return
+	}
+
+	user, err := getGitHubUserFromToken(token)
+	if err != nil {
+		if ghErr, ok := err.(*ghError); ok && ghErr.Status == http.StatusUnauthorized {
+			clearCookie(w, oauthTokenCookie)
+		}
+		writeError(w, http.StatusUnauthorized, "GitHub session expired. Please reconnect.")
+		return
+	}
+
+	installations, _ := getGitHubInstallationsFromToken(token)
+	login, _ := user["login"].(string)
+	chosenInstallation := pickInstallationForUser(installations, login)
+	if chosenInstallation == nil {
+		installHint := "Install the GitHub App for your account/repository and try again."
+		if appInstallURL != "" {
+			installHint = fmt.Sprintf("Install the app first: %s", appInstallURL)
+		}
+		writeError(w, http.StatusBadRequest, "GitHub App is not installed for this account.", installHint)
+		return
+	}
+
+	var installationID int64
+	if id, ok := chosenInstallation["id"].(float64); ok {
+		installationID = int64(id)
+	}
+	instToken, err := getInstallationToken(installationID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Unable to obtain bot installation token", err.Error())
+		return
+	}
+
+	repos, err := getInstallationRepositories(instToken)
+	if err != nil {
+		code := http.StatusBadGateway
+		if ghErr, ok := err.(*ghError); ok && ghErr.Status != 0 {
+			code = ghErr.Status
+		}
+		writeError(w, code, "Unable to fetch installation repositories")
+		return
+	}
+
+	type repoInfo struct {
+		Name          string `json:"name"`
+		FullName      string `json:"fullName"`
+		Owner         string `json:"owner"`
+		Private       bool   `json:"private"`
+		DefaultBranch string `json:"defaultBranch"`
+		HTMLURL       string `json:"htmlUrl"`
+	}
+	result := make([]repoInfo, 0, len(repos))
+	for _, repo := range repos {
+		owner := ""
+		if ownerObj, ok := repo["owner"].(map[string]any); ok {
+			owner, _ = ownerObj["login"].(string)
+		}
+		name, _ := repo["name"].(string)
+		fullName, _ := repo["full_name"].(string)
+		privateRepo, _ := repo["private"].(bool)
+		defaultBranch, _ := repo["default_branch"].(string)
+		htmlURL, _ := repo["html_url"].(string)
+		result = append(result, repoInfo{
+			Name:          name,
+			FullName:      fullName,
+			Owner:         owner,
+			Private:       privateRepo,
+			DefaultBranch: defaultBranch,
+			HTMLURL:       htmlURL,
+		})
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"installationId": chosenInstallation["id"],
+		"repositories":   result,
+	})
+}
+
 func handleAPIGitHubLogout(w http.ResponseWriter, r *http.Request) {
 	clearCookie(w, oauthTokenCookie)
 	w.WriteHeader(http.StatusNoContent)
@@ -277,7 +360,7 @@ func handleAPIGitHubDeploy(w http.ResponseWriter, r *http.Request) {
 		installationID = int64(id)
 	}
 
-	result, err := createRepositoryAndDeployTheme(token, login, installationID, params)
+	result, err := createRepositoryAndDeployTheme(login, installationID, params)
 	if err != nil {
 		code := http.StatusBadRequest
 		if ghErr, ok := err.(*ghError); ok && ghErr.Status != 0 {

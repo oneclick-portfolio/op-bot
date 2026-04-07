@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
 
 type ghError struct {
@@ -91,6 +92,24 @@ func getGitHubInstallationsFromToken(token string) ([]map[string]any, error) {
 	return result, nil
 }
 
+func getInstallationRepositories(token string) ([]map[string]any, error) {
+	payload, err := ghRequest(token, "/installation/repositories?per_page=100", http.MethodGet, nil)
+	if err != nil {
+		return nil, err
+	}
+	repositories, ok := payload["repositories"].([]any)
+	if !ok {
+		return nil, nil
+	}
+	result := make([]map[string]any, 0, len(repositories))
+	for _, repo := range repositories {
+		if m, ok := repo.(map[string]any); ok {
+			result = append(result, m)
+		}
+	}
+	return result, nil
+}
+
 func pickInstallationForUser(installations []map[string]any, userLogin string) map[string]any {
 	lowerLogin := strings.ToLower(userLogin)
 	for _, inst := range installations {
@@ -147,7 +166,15 @@ func uploadFileToRepo(token, owner, repo, branch, filePath string, content []byt
 }
 
 func commitAllFiles(token, owner, repo, branch, message string, files []fileEntry) error {
-	refResp, err := ghRequest(token, fmt.Sprintf("/repos/%s/%s/git/ref/heads/%s", owner, repo, url.PathEscape(branch)), http.MethodGet, nil)
+	var refResp map[string]any
+	var err error
+	for attempt := 0; attempt < 5; attempt++ {
+		refResp, err = ghRequest(token, fmt.Sprintf("/repos/%s/%s/git/ref/heads/%s", owner, repo, url.PathEscape(branch)), http.MethodGet, nil)
+		if err == nil {
+			break
+		}
+		time.Sleep(time.Duration(attempt+1) * time.Second)
+	}
 	if err != nil {
 		return fmt.Errorf("unable to get branch ref: %w", err)
 	}
@@ -214,10 +241,11 @@ func commitAllFiles(token, owner, repo, branch, message string, files []fileEntr
 }
 
 type deployParams struct {
-	Theme          string `json:"theme"`
-	RepositoryName string `json:"repositoryName"`
-	PrivateRepo    bool   `json:"privateRepo"`
-	ResumeData     any    `json:"resumeData"`
+	Theme           string `json:"theme"`
+	RepositoryName  string `json:"repositoryName"`
+	RepositoryOwner string `json:"repositoryOwner,omitempty"`
+	PrivateRepo     bool   `json:"privateRepo"`
+	ResumeData      any    `json:"resumeData"`
 }
 
 type deployResult struct {
@@ -228,38 +256,19 @@ type deployResult struct {
 	InstallationID any    `json:"installationId,omitempty"`
 }
 
-func createRepositoryAndDeployTheme(userToken, userLogin string, installationID int64, params deployParams) (*deployResult, error) {
+func createRepositoryAndDeployTheme(userLogin string, installationID int64, params deployParams) (*deployResult, error) {
 	theme := params.Theme
 	repositoryName := normalizeRepoName(params.RepositoryName)
+	repositoryOwner := strings.TrimSpace(params.RepositoryOwner)
+	if repositoryOwner == "" {
+		repositoryOwner = userLogin
+	}
 
 	if !validateTheme(theme) {
 		return nil, &ghError{Message: "Invalid theme selection.", Status: http.StatusBadRequest}
 	}
 	if repositoryName == "" {
 		return nil, &ghError{Message: "Repository name is required.", Status: http.StatusBadRequest}
-	}
-
-	repo, err := ghRequest(userToken, "/user/repos", http.MethodPost, map[string]any{
-		"name":        repositoryName,
-		"private":     params.PrivateRepo,
-		"auto_init":   true,
-		"description": fmt.Sprintf("Portfolio site generated from %s theme", theme),
-	})
-	reusedExisting := false
-	if err != nil {
-		ghErr, ok := err.(*ghError)
-		shouldTryExisting := ok && (ghErr.Status == http.StatusForbidden || ghErr.Status == http.StatusConflict || ghErr.Status == http.StatusUnprocessableEntity)
-		if !shouldTryExisting {
-			return nil, err
-		}
-		repo, err = ghRequest(userToken, fmt.Sprintf("/repos/%s/%s", userLogin, repositoryName), http.MethodGet, nil)
-		if err != nil {
-			return nil, &ghError{
-				Message: fmt.Sprintf("Repository creation failed: %s. If the repository already exists, ensure the GitHub App is installed on it. If it does not exist, grant the app repository Administration (write) and install it for all repositories or create the repo manually first.", ghErr.Message),
-				Status:  ghErr.Status,
-			}
-		}
-		reusedExisting = true
 	}
 
 	if params.ResumeData != nil {
@@ -273,7 +282,7 @@ func createRepositoryAndDeployTheme(userToken, userLogin string, installationID 
 		}
 	}
 
-	bundle, err := buildThemeBundle(theme, userLogin, repositoryName, params.ResumeData)
+	bundle, err := buildThemeBundle(theme, repositoryOwner, repositoryName, params.ResumeData)
 	if err != nil {
 		return nil, &ghError{Message: fmt.Sprintf("Unable to build %s theme bundle: %v", theme, err), Status: http.StatusInternalServerError}
 	}
@@ -286,23 +295,44 @@ func createRepositoryAndDeployTheme(userToken, userLogin string, installationID 
 	log.Printf("deploy.bot_token_ready installation_id=%d", installationID)
 	uploadToken := instToken
 
+	reusedExisting := false
+	repo, err := ghRequest(uploadToken, fmt.Sprintf("/repos/%s/%s", repositoryOwner, repositoryName), http.MethodGet, nil)
+	if err != nil {
+		log.Printf("deploy.repo_not_found repo=%s/%s, creating...", repositoryOwner, repositoryName)
+		repo, err = ghRequest(uploadToken, "/user/repos", http.MethodPost, map[string]any{
+			"name":         repositoryName,
+			"description":  fmt.Sprintf("Portfolio site deployed with the %s theme", theme),
+			"private":      params.PrivateRepo,
+			"auto_init":    true,
+			"has_issues":   false,
+			"has_projects": false,
+			"has_wiki":     false,
+		})
+		if err != nil {
+			return nil, &ghError{Message: fmt.Sprintf("Unable to create repository: %v", err), Status: http.StatusBadGateway}
+		}
+		log.Printf("deploy.repo_created repo=%s/%s", repositoryOwner, repositoryName)
+	} else {
+		reusedExisting = true
+	}
+
 	commitMsg := fmt.Sprintf("chore: deploy %s theme portfolio", theme)
-	if err := commitAllFiles(uploadToken, userLogin, repositoryName, "main", commitMsg, bundle); err != nil {
+	if err := commitAllFiles(uploadToken, repositoryOwner, repositoryName, "main", commitMsg, bundle); err != nil {
 		if ghErr, ok := err.(*ghError); ok {
 			return nil, ghErr
 		}
 		return nil, &ghError{Message: fmt.Sprintf("Unable to commit theme files: %v", err), Status: http.StatusBadGateway}
 	}
-	log.Printf("deploy.theme committed theme=%s repo=%s/%s files=%d", theme, userLogin, repositoryName, len(bundle))
+	log.Printf("deploy.theme committed theme=%s repo=%s/%s files=%d", theme, repositoryOwner, repositoryName, len(bundle))
 
-	_, _ = ghRequest(userToken, fmt.Sprintf("/repos/%s/%s/pages", userLogin, repositoryName), http.MethodPost, map[string]any{"build_type": "workflow"})
+	_, _ = ghRequest(uploadToken, fmt.Sprintf("/repos/%s/%s/pages", repositoryOwner, repositoryName), http.MethodPost, map[string]any{"build_type": "workflow"})
 
 	htmlURL, _ := repo["html_url"].(string)
 	fullName, _ := repo["full_name"].(string)
 
 	return &deployResult{
 		RepositoryURL:  htmlURL,
-		PagesURL:       fmt.Sprintf("https://%s.github.io/%s/", userLogin, repositoryName),
+		PagesURL:       fmt.Sprintf("https://%s.github.io/%s/", repositoryOwner, repositoryName),
 		RepoFullName:   fullName,
 		ReusedExisting: reusedExisting,
 	}, nil

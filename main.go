@@ -1,13 +1,14 @@
 package main
 
 import (
-	"fmt"
+	"log/slog"
 	"net/http"
-	"os"
 	"time"
 )
 
 func main() {
+	setupLogger()
+
 	handler := buildHandler(newServerMux())
 	server := &http.Server{
 		Addr:              httpAddr,
@@ -19,10 +20,10 @@ func main() {
 		MaxHeaderBytes:    1 << 20,
 	}
 
-	fmt.Printf("Server running at http://localhost:%s\n", port)
-	fmt.Printf("Swagger UI available at http://localhost:%s/swagger\n", port)
+	slog.Info("server.starting", "addr", httpAddr, "port", port)
+	slog.Info("server.swagger_ui", "url", "http://localhost:"+port+"/swagger")
 	if err := server.ListenAndServe(); err != nil {
-		fmt.Fprintf(os.Stderr, "Server error: %v\n", err)
-		os.Exit(1)
+		slog.Error("server.listen_failed", "error", err)
+		return
 	}
 }

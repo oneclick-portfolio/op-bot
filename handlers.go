@@ -7,13 +7,20 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"net/url"
 )
 
 //go:embed openapi.json
 var openapiSpec []byte
+
+func githubInstallHint() string {
+	if appInstallURL != "" {
+		return fmt.Sprintf("Install the app first: %s", appInstallURL)
+	}
+	return "Install the GitHub App for your account/repository and try again."
+}
 
 func setCookie(w http.ResponseWriter, name, value string, maxAge int, secure bool) {
 	sameSite := http.SameSiteLaxMode
@@ -61,7 +68,10 @@ func handleAuthGitHubStart(w http.ResponseWriter, r *http.Request) {
 	}
 
 	stateBytes := make([]byte, 18)
-	_, _ = rand.Read(stateBytes)
+	if _, err := rand.Read(stateBytes); err != nil {
+		writeError(w, http.StatusInternalServerError, "Unable to initialize OAuth flow.")
+		return
+	}
 	state := hex.EncodeToString(stateBytes)
 
 	returnTo := r.URL.Query().Get("returnTo")
@@ -72,7 +82,11 @@ func handleAuthGitHubStart(w http.ResponseWriter, r *http.Request) {
 	setCookie(w, oauthStateCookie, state, 600, isProduction())
 	setCookie(w, oauthReturnCookie, returnTo, 600, isProduction())
 
-	authURL, _ := url.Parse("https://github.com/login/oauth/authorize")
+	authURL, err := url.Parse("https://github.com/login/oauth/authorize")
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Unable to initialize OAuth flow.")
+		return
+	}
 	q := authURL.Query()
 	q.Set("client_id", appClientID)
 	q.Set("state", state)
@@ -122,9 +136,17 @@ func handleAuthGitHubCallback(w http.ResponseWriter, r *http.Request) {
 	if oauthCallbackURL != "" {
 		tokenPayload["redirect_uri"] = oauthCallbackURL
 	}
-	tokenBody, _ := json.Marshal(tokenPayload)
+	tokenBody, err := json.Marshal(tokenPayload)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "OAuth callback failed.")
+		return
+	}
 
-	req, _ := http.NewRequest(http.MethodPost, "https://github.com/login/oauth/access_token", bytes.NewReader(tokenBody))
+	req, err := http.NewRequest(http.MethodPost, "https://github.com/login/oauth/access_token", bytes.NewReader(tokenBody))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "OAuth callback failed.")
+		return
+	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/json")
 
@@ -155,7 +177,10 @@ func handleAuthGitHubCallback(w http.ResponseWriter, r *http.Request) {
 	userToken, _ := tokenResp["access_token"].(string)
 	setCookie(w, oauthTokenCookie, userToken, 60*60*4, isProduction())
 
-	redirectURL, _ := url.Parse(returnTo)
+	redirectURL, err := url.Parse(returnTo)
+	if err != nil {
+		redirectURL = &url.URL{Path: "/"}
+	}
 	q := redirectURL.Query()
 	q.Set("connected", "1")
 	redirectURL.RawQuery = q.Encode()
@@ -179,7 +204,11 @@ func handleAPIGitHubMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	installations, _ := getGitHubInstallationsFromToken(token)
+	installations, err := getGitHubInstallationsFromToken(token)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, fmt.Sprintf("Unable to load GitHub App installations: %v", err))
+		return
+	}
 	login, _ := user["login"].(string)
 	chosenInstallation := pickInstallationForUser(installations, login)
 
@@ -229,15 +258,15 @@ func handleAPIGitHubRepos(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	installations, _ := getGitHubInstallationsFromToken(token)
+	installations, err := getGitHubInstallationsFromToken(token)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, fmt.Sprintf("Unable to load GitHub App installations: %v", err))
+		return
+	}
 	login, _ := user["login"].(string)
 	chosenInstallation := pickInstallationForUser(installations, login)
 	if chosenInstallation == nil {
-		installHint := "Install the GitHub App for your account/repository and try again."
-		if appInstallURL != "" {
-			installHint = fmt.Sprintf("Install the app first: %s", appInstallURL)
-		}
-		writeError(w, http.StatusBadRequest, "GitHub App is not installed for this account.", installHint)
+		writeError(w, http.StatusBadRequest, "GitHub App is not installed for this account.", githubInstallHint())
 		return
 	}
 
@@ -245,13 +274,17 @@ func handleAPIGitHubRepos(w http.ResponseWriter, r *http.Request) {
 	if id, ok := chosenInstallation["id"].(float64); ok {
 		installationID = int64(id)
 	}
+	if installationID == 0 {
+		writeError(w, http.StatusBadGateway, "Unable to resolve GitHub App installation id for this account.")
+		return
+	}
 	instToken, err := getInstallationToken(installationID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Unable to obtain bot installation token", err.Error())
 		return
 	}
 
-	repos, err := getInstallationRepositories(instToken)
+	repos, err := getInstallationRepositories(instToken.Token)
 	if err != nil {
 		code := http.StatusBadGateway
 		if ghErr, ok := err.(*ghError); ok && ghErr.Status != 0 {
@@ -302,24 +335,38 @@ func handleAPIGitHubLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleAPIResumeValidate(w http.ResponseWriter, r *http.Request) {
-	log.Printf("resume.validate start remote=%s", r.RemoteAddr)
+	slog.InfoContext(r.Context(), "resume.validate.start",
+		"request_id", requestIDFromContext(r.Context()),
+		"remote_hash", redactRemoteAddr(r.RemoteAddr),
+	)
 
 	var body struct {
 		ResumeData any `json:"resumeData"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		log.Printf("resume.validate invalid_json remote=%s err=%v", r.RemoteAddr, err)
+		slog.WarnContext(r.Context(), "resume.validate.invalid_json",
+			"request_id", requestIDFromContext(r.Context()),
+			"remote_hash", redactRemoteAddr(r.RemoteAddr),
+			"error", err,
+		)
 		writeError(w, http.StatusBadRequest, "Invalid JSON body")
 		return
 	}
 
 	result := validateResumeData(body.ResumeData)
 	if !result.Valid {
-		log.Printf("resume.validate failed remote=%s errors=%d", r.RemoteAddr, len(result.Errors))
+		slog.WarnContext(r.Context(), "resume.validate.failed",
+			"request_id", requestIDFromContext(r.Context()),
+			"remote_hash", redactRemoteAddr(r.RemoteAddr),
+			"error_count", len(result.Errors),
+		)
 		writeError(w, http.StatusBadRequest, "Resume schema validation failed", result.Errors...)
 		return
 	}
-	log.Printf("resume.validate success remote=%s", r.RemoteAddr)
+	slog.InfoContext(r.Context(), "resume.validate.success",
+		"request_id", requestIDFromContext(r.Context()),
+		"remote_hash", redactRemoteAddr(r.RemoteAddr),
+	)
 	writeJSON(w, http.StatusOK, result)
 }
 
@@ -342,16 +389,16 @@ func handleAPIGitHubDeploy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	installations, _ := getGitHubInstallationsFromToken(token)
+	installations, err := getGitHubInstallationsFromToken(token)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, fmt.Sprintf("Unable to load GitHub App installations: %v", err))
+		return
+	}
 	login, _ := me["login"].(string)
 	chosenInstallation := pickInstallationForUser(installations, login)
 
 	if chosenInstallation == nil {
-		installHint := "Install the GitHub App for your account/repository and try again."
-		if appInstallURL != "" {
-			installHint = fmt.Sprintf("Install the app first: %s", appInstallURL)
-		}
-		writeError(w, http.StatusBadRequest, "GitHub App is not installed for this account.", installHint)
+		writeError(w, http.StatusBadRequest, "GitHub App is not installed for this account.", githubInstallHint())
 		return
 	}
 
@@ -359,8 +406,12 @@ func handleAPIGitHubDeploy(w http.ResponseWriter, r *http.Request) {
 	if id, ok := chosenInstallation["id"].(float64); ok {
 		installationID = int64(id)
 	}
+	if installationID == 0 {
+		writeError(w, http.StatusBadGateway, "Unable to resolve GitHub App installation id for this account.")
+		return
+	}
 
-	result, err := createRepositoryAndDeployTheme(login, installationID, params)
+	result, err := createRepositoryAndDeployTheme(r.Context(), token, login, chosenInstallation, installationID, params)
 	if err != nil {
 		code := http.StatusBadRequest
 		if ghErr, ok := err.(*ghError); ok && ghErr.Status != 0 {

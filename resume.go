@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -34,21 +34,21 @@ func getResumeSchema() (*jsonschema.Schema, error) {
 		schemaData, err := fetchRemoteResumeSchema()
 		if err != nil {
 			if isNetworkError(err) {
-				log.Printf("resume.schema remote_fetch_failed url=%s err=%v; using local fallback", resumeSchemaURL, err)
+				slog.Warn("resume.schema.remote_fetch_failed", "url", resumeSchemaURL, "error", err)
 				schemaData, err = loadLocalResumeSchema()
 				if err != nil {
 					resumeSchemaErr = fmt.Errorf("schema fetch failed and local fallback failed: %w", err)
-					log.Printf("resume.schema local_fallback_failed err=%v", resumeSchemaErr)
+					slog.Error("resume.schema.local_fallback_failed", "error", resumeSchemaErr)
 					return
 				}
-				log.Printf("resume.schema local_fallback_loaded bytes=%d", len(schemaData))
+				slog.Info("resume.schema.local_fallback_loaded", "bytes", len(schemaData))
 			} else {
 				resumeSchemaErr = fmt.Errorf("unable to load resume schema: %w", err)
-				log.Printf("resume.schema load_failed err=%v", resumeSchemaErr)
+				slog.Error("resume.schema.load_failed", "error", resumeSchemaErr)
 				return
 			}
 		} else {
-			log.Printf("resume.schema remote_loaded url=%s bytes=%d", resumeSchemaURL, len(schemaData))
+			slog.Info("resume.schema.remote_loaded", "url", resumeSchemaURL, "bytes", len(schemaData))
 		}
 
 		doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(schemaData))
@@ -66,11 +66,11 @@ func getResumeSchema() (*jsonschema.Schema, error) {
 		resumeSchema, resumeSchemaErr = schemaCompiler.Compile(resumeSchemaURL)
 		if resumeSchemaErr != nil {
 			resumeSchemaErr = fmt.Errorf("unable to compile resume schema from %s: %w", resumeSchemaURL, resumeSchemaErr)
-			log.Printf("resume.schema compile_failed err=%v", resumeSchemaErr)
+			slog.Error("resume.schema.compile_failed", "error", resumeSchemaErr)
 			return
 		}
 
-		log.Printf("resume.schema compile_success")
+		slog.Info("resume.schema.compile_success")
 	})
 	return resumeSchema, resumeSchemaErr
 }

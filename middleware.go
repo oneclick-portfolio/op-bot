@@ -1,7 +1,7 @@
 package main
 
 import (
-	"log"
+	"log/slog"
 	"net/http"
 	"runtime/debug"
 	"time"
@@ -38,6 +38,13 @@ func (rw *responseRecorder) Write(data []byte) (int, error) {
 
 func requestLoggerMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestID := r.Header.Get("X-Request-ID")
+		if requestID == "" {
+			requestID = generateRequestID()
+		}
+		w.Header().Set("X-Request-ID", requestID)
+		r = r.WithContext(withRequestID(r.Context(), requestID))
+
 		started := time.Now()
 		rw := &responseRecorder{ResponseWriter: w}
 		next.ServeHTTP(rw, r)
@@ -47,7 +54,15 @@ func requestLoggerMiddleware(next http.Handler) http.Handler {
 			status = http.StatusOK
 		}
 
-		log.Printf("request method=%s path=%s status=%d duration=%s bytes=%d remote=%s", r.Method, r.URL.Path, status, time.Since(started).Round(time.Millisecond), rw.bytesWritten, r.RemoteAddr)
+		slog.InfoContext(r.Context(), "http.request",
+			"request_id", requestID,
+			"method", r.Method,
+			"path", r.URL.Path,
+			"status", status,
+			"duration_ms", time.Since(started).Milliseconds(),
+			"bytes", rw.bytesWritten,
+			"remote_hash", redactRemoteAddr(r.RemoteAddr),
+		)
 	})
 }
 
@@ -105,7 +120,13 @@ func recoverMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if rec := recover(); rec != nil {
-				log.Printf("panic recovered method=%s path=%s err=%v\n%s", r.Method, r.URL.Path, rec, debug.Stack())
+				slog.ErrorContext(r.Context(), "http.panic_recovered",
+					"request_id", requestIDFromContext(r.Context()),
+					"method", r.Method,
+					"path", r.URL.Path,
+					"error", rec,
+					"stack", string(debug.Stack()),
+				)
 				writeError(w, http.StatusInternalServerError, "Internal server error")
 			}
 		}()

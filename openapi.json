@@ -280,7 +280,7 @@
       },
       "DeployParams": {
         "type": "object",
-        "required": ["theme", "repositoryName"],
+        "required": ["theme", "repositoryName", "themeRepoLink"],
         "properties": {
           "theme": {
             "type": "string",
@@ -290,6 +290,11 @@
           "repositoryName": {
             "type": "string",
             "example": "my-portfolio"
+          },
+          "themeRepoLink": {
+            "type": "string",
+            "description": "GitHub repository link used as the theme source. Supports repository root URL or /tree/{ref} URL.",
+            "example": "https://github.com/oneclick-portfolio/awesome-github-portfolio/tree/main"
           },
           "privateRepo": {
             "type": "boolean",

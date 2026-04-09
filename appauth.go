@@ -12,6 +12,14 @@ import (
 	"time"
 )
 
+type installationToken struct {
+	Token               string
+	RepositorySelection string
+	SingleFileName      string
+	Permissions         map[string]string
+	ExpiresAt           string
+}
+
 func generateAppJWT() (string, error) {
 	if appPrivateKey == nil {
 		return "", fmt.Errorf("APP_PRIVATE_KEY not configured")
@@ -37,15 +45,15 @@ func generateAppJWT() (string, error) {
 	return unsigned + "." + base64.RawURLEncoding.EncodeToString(sig), nil
 }
 
-func getInstallationToken(installationID int64) (string, error) {
+func getInstallationToken(installationID int64) (*installationToken, error) {
 	jwt, err := generateAppJWT()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("https://api.github.com/app/installations/%d/access_tokens", installationID), nil)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	req.Header.Set("Authorization", "Bearer "+jwt)
 	req.Header.Set("Accept", "application/vnd.github+json")
@@ -53,14 +61,17 @@ func getInstallationToken(installationID int64) (string, error) {
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("unable to exchange installation token: %w", err)
+		return nil, fmt.Errorf("unable to exchange installation token: %w", err)
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("unable to read installation token response: %w", err)
+	}
 	var result map[string]any
 	if err := json.Unmarshal(body, &result); err != nil {
-		return "", fmt.Errorf("unable to parse installation token response: %w", err)
+		return nil, fmt.Errorf("unable to parse installation token response: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusCreated {
@@ -68,13 +79,32 @@ func getInstallationToken(installationID int64) (string, error) {
 		if m, ok := result["message"].(string); ok {
 			msg = m
 		}
-		return "", fmt.Errorf("%s: status %d", msg, resp.StatusCode)
+		return nil, fmt.Errorf("%s: status %d", msg, resp.StatusCode)
 	}
 
 	token, ok := result["token"].(string)
 	if !ok || token == "" {
-		return "", fmt.Errorf("empty installation token in response")
+		return nil, fmt.Errorf("empty installation token in response")
 	}
 
-	return token, nil
+	permissions := map[string]string{}
+	if rawPermissions, ok := result["permissions"].(map[string]any); ok {
+		for key, value := range rawPermissions {
+			if text, ok := value.(string); ok {
+				permissions[key] = text
+			}
+		}
+	}
+
+	selection, _ := result["repository_selection"].(string)
+	singleFileName, _ := result["single_file_name"].(string)
+	expiresAt, _ := result["expires_at"].(string)
+
+	return &installationToken{
+		Token:               token,
+		RepositorySelection: selection,
+		SingleFileName:      singleFileName,
+		Permissions:         permissions,
+		ExpiresAt:           expiresAt,
+	}, nil
 }

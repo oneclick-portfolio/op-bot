@@ -28,8 +28,6 @@ Copy `.env.example` to `.env` and set:
 - `NODE_ENV=production` when running outside Vercel in production
 - `APP_INSTALL_URL` (optional)
 - `PORT` (optional, default `8080`)
-- `THEME_SOURCE_REPO` (optional, default `oneclick-portfolio/awesome-github-portfolio`)
-- `THEME_SOURCE_REF` (optional, default `main`)
 
 Notes:
 
@@ -145,3 +143,8 @@ Swagger UI available at: http://localhost:8080/swagger
 - `POST /api/github/deploy`
 - `GET /swagger` - Swagger UI
 - `GET /swagger/openapi.json` - OpenAPI spec
+
+Deploy contract note:
+
+- `POST /api/github/deploy` now requires `themeRepoLink` in the request body.
+- `themeRepoLink` must be a `https://github.com/...` repository URL, optionally including `/tree/{ref}`.

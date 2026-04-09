@@ -24,8 +24,6 @@ var (
 	oauthCallbackURL string
 	corsOrigins      []string
 	corsCredentials  bool
-	themeSourceRepo  string
-	themeSourceRef   string
 	resumeSchema     *jsonschema.Schema
 	resumeSchemaOnce sync.Once
 	resumeSchemaErr  error
@@ -37,6 +35,12 @@ const (
 	oauthStateCookie  = "gh_oauth_state"
 	oauthReturnCookie = "gh_oauth_return"
 	oauthTokenCookie  = "gh_access_token"
+
+	// sharedAssetsRepo and sharedAssetsRef define the fixed source for shared
+	// runtime files (e.g. src/rxresume.js) that are independent of the theme
+	// repository link provided by the caller at deploy time.
+	sharedAssetsRepo = "oneclick-portfolio/awesome-github-portfolio"
+	sharedAssetsRef  = "main"
 )
 
 var themeFiles = map[string]map[string]string{
@@ -77,14 +81,6 @@ func init() {
 	appClientSecret = strings.TrimSpace(os.Getenv("APP_CLIENT_SECRET"))
 	appInstallURL = normalizeInstallURL(strings.TrimSpace(os.Getenv("APP_INSTALL_URL")))
 	oauthCallbackURL = strings.TrimSpace(os.Getenv("OAUTH_CALLBACK_URL"))
-	themeSourceRepo = strings.TrimSpace(os.Getenv("THEME_SOURCE_REPO"))
-	if themeSourceRepo == "" {
-		themeSourceRepo = "oneclick-portfolio/awesome-github-portfolio"
-	}
-	themeSourceRef = strings.TrimSpace(os.Getenv("THEME_SOURCE_REF"))
-	if themeSourceRef == "" {
-		themeSourceRef = "main"
-	}
 	appID = strings.TrimSpace(os.Getenv("APP_ID"))
 	if pkPEM := strings.TrimSpace(os.Getenv("APP_PRIVATE_KEY")); pkPEM != "" {
 		pkPEM = strings.ReplaceAll(pkPEM, `\n`, "\n")
@@ -104,8 +100,6 @@ func init() {
 		corsOrigins = []string{
 			"http://localhost:3000",
 			"http://127.0.0.1:3000",
-			"http://localhost:5173",
-			"http://127.0.0.1:5173",
 			"http://localhost:4173",
 			"http://127.0.0.1:4173",
 		}

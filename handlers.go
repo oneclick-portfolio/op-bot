@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -504,5 +505,96 @@ func handleSwaggerUI(w http.ResponseWriter, r *http.Request) {
 func handleOpenAPISpec(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(openapiSpec)
+}
+
+// @Summary Parse resume PDF to JSON
+// @Description Extracts resume data from a PDF file using AI and returns v5 schema JSON
+// @Tags resume
+// @Accept multipart/form-data
+// @Produce json
+// @Param file formData file true "Resume PDF file (max 5MB)"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} apiErrorResponse "Bad Request"
+// @Failure 500 {object} apiErrorResponse "Internal Server Error"
+// @Router /api/resume/parse [post]
+func handleAPIResumeParsePDF(w http.ResponseWriter, r *http.Request) {
+	slog.InfoContext(r.Context(), "resume.parse.start",
+		"request_id", requestIDFromContext(r.Context()),
+		"remote_hash", redactRemoteAddr(r.RemoteAddr),
+	)
+
+	if googleAPIKey == "" {
+		writeError(w, http.StatusInternalServerError, "PDF parsing is not configured. Set GOOGLE_API_KEY.")
+		return
+	}
+
+	// Limit upload to 5 MB — resumes are never larger.
+	const maxUploadSize = 5 << 20
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize)
+
+	if err := r.ParseMultipartForm(maxUploadSize); err != nil {
+		writeError(w, http.StatusBadRequest, "File too large or invalid form (max 5MB)")
+		return
+	}
+
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "File 'file' is required")
+		return
+	}
+	defer file.Close()
+
+	// Validate that the uploaded file is a PDF.
+	contentType := header.Header.Get("Content-Type")
+	if contentType != "" && contentType != "application/pdf" && contentType != "application/octet-stream" {
+		writeError(w, http.StatusBadRequest, "Only PDF files are accepted")
+		return
+	}
+
+	pdfBytes, err := io.ReadAll(file)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to read file")
+		return
+	}
+
+	// Quick magic-byte check: PDF files start with %PDF.
+	if len(pdfBytes) < 4 || string(pdfBytes[:4]) != "%PDF" {
+		writeError(w, http.StatusBadRequest, "Uploaded file is not a valid PDF")
+		return
+	}
+
+	parsedData, err := ParsePDFToJSON(r.Context(), googleAPIKey, pdfBytes)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "resume.parse.failed",
+			"request_id", requestIDFromContext(r.Context()),
+			"error", err,
+		)
+		writeError(w, http.StatusInternalServerError, "Failed to parse PDF: "+err.Error())
+		return
+	}
+
+	// Validate against the v5 schema.
+	result := validateResumeData(parsedData)
+	if !result.Valid {
+		slog.WarnContext(r.Context(), "resume.parse.validation_failed",
+			"request_id", requestIDFromContext(r.Context()),
+			"error_count", len(result.Errors),
+		)
+		// Return the parsed data anyway with validation warnings — the AI output
+		// may be usable even if it doesn't pass strict schema validation.
+		writeJSON(w, http.StatusOK, map[string]any{
+			"resumeData":         parsedData,
+			"validationWarnings": result.Errors,
+		})
+		return
+	}
+
+	slog.InfoContext(r.Context(), "resume.parse.success",
+		"request_id", requestIDFromContext(r.Context()),
+	)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"resumeData":         parsedData,
+		"validationWarnings": []string{},
+	})
 }
 

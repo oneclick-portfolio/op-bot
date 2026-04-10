@@ -29,6 +29,7 @@ var (
 	resumeSchemaErr  error
 	appID            string
 	appPrivateKey    *rsa.PrivateKey
+	googleAPIKey     string
 )
 
 const (
@@ -82,6 +83,7 @@ func init() {
 	appInstallURL = normalizeInstallURL(strings.TrimSpace(os.Getenv("APP_INSTALL_URL")))
 	oauthCallbackURL = strings.TrimSpace(os.Getenv("OAUTH_CALLBACK_URL"))
 	appID = strings.TrimSpace(os.Getenv("APP_ID"))
+	googleAPIKey = strings.TrimSpace(os.Getenv("GOOGLE_API_KEY"))
 	if pkPEM := strings.TrimSpace(os.Getenv("APP_PRIVATE_KEY")); pkPEM != "" {
 		pkPEM = strings.ReplaceAll(pkPEM, `\n`, "\n")
 		if block, _ := pem.Decode([]byte(pkPEM)); block != nil {

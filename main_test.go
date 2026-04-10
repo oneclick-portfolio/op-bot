@@ -2,8 +2,12 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -431,3 +435,234 @@ func TestValidateTestFile(t *testing.T) {
 		t.Fatalf("schema validation failed: \n- %s", strings.Join(result.Errors, "\n- "))
 	}
 }
+
+// --- PDF Parse handler tests ---
+
+// createMultipartPDF builds a multipart/form-data request body with the given
+// content as a file upload named "file".
+func createMultipartPDF(t *testing.T, filename string, content []byte, contentType string) (*bytes.Buffer, string) {
+	t.Helper()
+	body := new(bytes.Buffer)
+	writer := multipart.NewWriter(body)
+
+	h := make(map[string][]string)
+	h["Content-Disposition"] = []string{fmt.Sprintf(`form-data; name="file"; filename="%s"`, filename)}
+	if contentType != "" {
+		h["Content-Type"] = []string{contentType}
+	}
+	part, err := writer.CreatePart(h)
+	if err != nil {
+		t.Fatalf("failed to create form part: %v", err)
+	}
+	if _, err := io.Copy(part, bytes.NewReader(content)); err != nil {
+		t.Fatalf("failed to write form part: %v", err)
+	}
+	writer.Close()
+	return body, writer.FormDataContentType()
+}
+
+func TestHandleAPIResumeParsePDF_NoFile(t *testing.T) {
+	// Send a multipart request with no file field at all.
+	body := new(bytes.Buffer)
+	writer := multipart.NewWriter(body)
+	writer.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/resume/parse", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	rr := httptest.NewRecorder()
+
+	oldKey := googleAPIKey
+	googleAPIKey = "test-key"
+	t.Cleanup(func() { googleAPIKey = oldKey })
+
+	handleAPIResumeParsePDF(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rr.Code)
+	}
+	payload := parseErrorResponse(t, rr)
+	if !strings.Contains(strings.ToLower(payload.Error.Message), "file") {
+		t.Fatalf("message = %q, expected mention of file", payload.Error.Message)
+	}
+}
+
+func TestHandleAPIResumeParsePDF_WrongContentType(t *testing.T) {
+	body, ct := createMultipartPDF(t, "resume.txt", []byte("not a pdf"), "text/plain")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/resume/parse", body)
+	req.Header.Set("Content-Type", ct)
+	rr := httptest.NewRecorder()
+
+	oldKey := googleAPIKey
+	googleAPIKey = "test-key"
+	t.Cleanup(func() { googleAPIKey = oldKey })
+
+	handleAPIResumeParsePDF(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rr.Code)
+	}
+	payload := parseErrorResponse(t, rr)
+	if !strings.Contains(strings.ToLower(payload.Error.Message), "pdf") {
+		t.Fatalf("message = %q, expected mention of PDF", payload.Error.Message)
+	}
+}
+
+func TestHandleAPIResumeParsePDF_NotValidPDF(t *testing.T) {
+	// Send application/pdf content-type but content that doesn't start with %PDF.
+	body, ct := createMultipartPDF(t, "resume.pdf", []byte("this is not a real pdf"), "application/pdf")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/resume/parse", body)
+	req.Header.Set("Content-Type", ct)
+	rr := httptest.NewRecorder()
+
+	oldKey := googleAPIKey
+	googleAPIKey = "test-key"
+	t.Cleanup(func() { googleAPIKey = oldKey })
+
+	handleAPIResumeParsePDF(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rr.Code)
+	}
+	payload := parseErrorResponse(t, rr)
+	if !strings.Contains(strings.ToLower(payload.Error.Message), "valid pdf") {
+		t.Fatalf("message = %q, expected 'valid PDF' mention", payload.Error.Message)
+	}
+}
+
+func TestHandleAPIResumeParsePDF_MissingAPIKey(t *testing.T) {
+	// Create a valid-looking PDF (starts with %PDF).
+	fakePDF := []byte("%PDF-1.4 fake content")
+	body, ct := createMultipartPDF(t, "resume.pdf", fakePDF, "application/pdf")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/resume/parse", body)
+	req.Header.Set("Content-Type", ct)
+	rr := httptest.NewRecorder()
+
+	oldKey := googleAPIKey
+	googleAPIKey = ""
+	t.Cleanup(func() { googleAPIKey = oldKey })
+
+	handleAPIResumeParsePDF(rr, req)
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", rr.Code)
+	}
+	payload := parseErrorResponse(t, rr)
+	if !strings.Contains(strings.ToLower(payload.Error.Message), "google_api_key") {
+		t.Fatalf("message = %q, expected mention of GOOGLE_API_KEY", payload.Error.Message)
+	}
+}
+
+func TestHandleAPIResumeParsePDF_FileTooLarge(t *testing.T) {
+	// Create content >5 MB.
+	largeContent := make([]byte, 6<<20)
+	copy(largeContent[:4], []byte("%PDF"))
+	body, ct := createMultipartPDF(t, "resume.pdf", largeContent, "application/pdf")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/resume/parse", body)
+	req.Header.Set("Content-Type", ct)
+	rr := httptest.NewRecorder()
+
+	oldKey := googleAPIKey
+	googleAPIKey = "test-key"
+	t.Cleanup(func() { googleAPIKey = oldKey })
+
+	handleAPIResumeParsePDF(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rr.Code)
+	}
+	payload := parseErrorResponse(t, rr)
+	if !strings.Contains(strings.ToLower(payload.Error.Message), "large") && !strings.Contains(strings.ToLower(payload.Error.Message), "5mb") {
+		t.Fatalf("message = %q, expected size limit mention", payload.Error.Message)
+	}
+}
+
+func TestHandleAPIResumeParsePDF_RouteExists(t *testing.T) {
+	mux := newServerMux()
+
+	// Verify the route is registered by making a POST request.
+	// Without API key, we should get 500 (not 404/405).
+	oldKey := googleAPIKey
+	googleAPIKey = ""
+	t.Cleanup(func() { googleAPIKey = oldKey })
+
+	body := new(bytes.Buffer)
+	writer := multipart.NewWriter(body)
+	writer.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/resume/parse", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, req)
+
+	// Should not be 404/405 — route must be registered.
+	if rr.Code == http.StatusNotFound || rr.Code == http.StatusMethodNotAllowed {
+		t.Fatalf("route /api/resume/parse not registered, got status %d", rr.Code)
+	}
+}
+
+// --- ExtractJSON tests ---
+
+func TestExtractJSON(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "plain JSON",
+			input: `{"name": "test"}`,
+			want:  `{"name": "test"}`,
+		},
+		{
+			name:  "markdown-wrapped JSON",
+			input: "```json\n{\"name\": \"test\"}\n```",
+			want:  `{"name": "test"}`,
+		},
+		{
+			name:  "text before and after JSON",
+			input: "Here is the result:\n{\"basics\": {\"name\": \"Alice\"}}\nDone.",
+			want:  `{"basics": {"name": "Alice"}}`,
+		},
+		{
+			name:  "nested braces",
+			input: `{"a": {"b": {"c": 1}}}`,
+			want:  `{"a": {"b": {"c": 1}}}`,
+		},
+		{
+			name:  "no JSON at all",
+			input: "just plain text",
+			want:  "just plain text",
+		},
+		{
+			name:  "empty string",
+			input: "",
+			want:  "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ExtractJSON(tt.input)
+			if got != tt.want {
+				t.Errorf("ExtractJSON(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+// --- ParsePDFToJSON unit tests ---
+
+func TestParsePDFToJSON_NoAPIKey(t *testing.T) {
+	_, err := ParsePDFToJSON(context.Background(), "", []byte("%PDF-1.4 content"))
+	if err == nil {
+		t.Fatal("expected error for empty API key")
+	}
+	if !strings.Contains(err.Error(), "API key") {
+		t.Fatalf("error = %q, expected API key mention", err)
+	}
+}
+

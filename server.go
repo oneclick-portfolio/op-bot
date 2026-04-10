@@ -13,6 +13,7 @@ func newServerMux() *http.ServeMux {
 	mux.HandleFunc("GET /api/github/repos", handleAPIGitHubRepos)
 	mux.HandleFunc("POST /api/github/logout", handleAPIGitHubLogout)
 	mux.HandleFunc("POST /api/resume/validate", handleAPIResumeValidate)
+	mux.HandleFunc("POST /api/resume/parse", handleAPIResumeParsePDF)
 	mux.HandleFunc("POST /api/github/deploy", handleAPIGitHubDeploy)
 
 	mux.HandleFunc("GET /swagger", handleSwaggerUI)

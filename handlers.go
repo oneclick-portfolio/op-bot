@@ -12,7 +12,7 @@ import (
 	"net/url"
 )
 
-//go:embed openapi.json
+//go:embed docs/swagger.json
 var openapiSpec []byte
 
 func githubInstallHint() string {
@@ -62,6 +62,13 @@ func requireGitHubAppConfig(w http.ResponseWriter) bool {
 	return true
 }
 
+// @Summary Start GitHub OAuth flow
+// @Description Redirects to GitHub for OAuth authorization
+// @Tags auth
+// @Param returnTo query string false "URL to return to after auth"
+// @Success 302
+// @Failure 500 {object} apiErrorResponse
+// @Router /auth/github/start [get]
 func handleAuthGitHubStart(w http.ResponseWriter, r *http.Request) {
 	if !requireGitHubAppConfig(w) {
 		return
@@ -99,6 +106,15 @@ func handleAuthGitHubStart(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, authURL.String(), http.StatusFound)
 }
 
+// @Summary GitHub OAuth callback
+// @Description Handles OAuth callback from GitHub and sets auth cookie
+// @Tags auth
+// @Param code query string true "OAuth code"
+// @Param state query string true "OAuth state"
+// @Success 302
+// @Failure 400 {object} apiErrorResponse "Invalid OAuth state"
+// @Failure 500 {object} apiErrorResponse "OAuth callback failed"
+// @Router /auth/github/callback [get]
 func handleAuthGitHubCallback(w http.ResponseWriter, r *http.Request) {
 	if !requireGitHubAppConfig(w) {
 		return
@@ -188,6 +204,13 @@ func handleAuthGitHubCallback(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, redirectURL.String(), http.StatusFound)
 }
 
+// @Summary Get current GitHub user
+// @Description Returns the authenticated GitHub user and app installation info
+// @Tags github
+// @Produce json
+// @Success 200 {object} MeResponse
+// @Failure 401 {object} apiErrorResponse
+// @Router /api/github/me [get]
 func handleAPIGitHubMe(w http.ResponseWriter, r *http.Request) {
 	token := getCookie(r, oauthTokenCookie)
 	if token == "" {
@@ -242,6 +265,14 @@ func handleAPIGitHubMe(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// @Summary Get current GitHub installations repositories
+// @Description Returns the repositories the GitHub app has access to
+// @Tags github
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} apiErrorResponse
+// @Failure 502 {object} apiErrorResponse "Unable to load repositories"
+// @Router /api/github/repos [get]
 func handleAPIGitHubRepos(w http.ResponseWriter, r *http.Request) {
 	token := getCookie(r, oauthTokenCookie)
 	if token == "" {
@@ -329,11 +360,25 @@ func handleAPIGitHubRepos(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// @Summary Logout from GitHub
+// @Description Clears the GitHub auth cookie
+// @Tags github
+// @Success 204 "No Content"
+// @Router /api/github/logout [post]
 func handleAPIGitHubLogout(w http.ResponseWriter, r *http.Request) {
 	clearCookie(w, oauthTokenCookie)
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// @Summary Validate resume JSON
+// @Description Validates resume data against the RxResume schema
+// @Tags resume
+// @Accept json
+// @Produce json
+// @Param request body ValidateRequest true "Resume JSON data to validate"
+// @Success 200 {object} ValidationResult
+// @Failure 400 {object} apiErrorResponse "Bad Request"
+// @Router /api/resume/validate [post]
 func handleAPIResumeValidate(w http.ResponseWriter, r *http.Request) {
 	slog.InfoContext(r.Context(), "resume.validate.start",
 		"request_id", requestIDFromContext(r.Context()),
@@ -370,6 +415,16 @@ func handleAPIResumeValidate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
+// @Summary Deploy portfolio theme
+// @Description Creates a GitHub repository and deploys the selected theme
+// @Tags github
+// @Accept json
+// @Produce json
+// @Param request body deployParams true "Deploy parameters"
+// @Success 200 {object} deployResult
+// @Failure 400 {object} apiErrorResponse "Bad Request"
+// @Failure 401 {object} apiErrorResponse "Unauthorized"
+// @Router /api/github/deploy [post]
 func handleAPIGitHubDeploy(w http.ResponseWriter, r *http.Request) {
 	token := getCookie(r, oauthTokenCookie)
 	if token == "" {
@@ -450,3 +505,4 @@ func handleOpenAPISpec(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(openapiSpec)
 }
+

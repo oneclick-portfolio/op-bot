@@ -6,6 +6,10 @@ import (
 	"time"
 )
 
+//	@title			Op-Bot API
+//	@version		1.0.0
+//	@description	Backend API for portfolio deployment with GitHub OAuth and resume validation. Runs as a microservice separate from the frontend.
+//	@BasePath		/
 func main() {
 	setupLogger()
 

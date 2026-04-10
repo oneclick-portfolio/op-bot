@@ -1,0 +1,373 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "description": "Backend API for portfolio deployment with GitHub OAuth and resume validation. Runs as a microservice separate from the frontend.",
+        "title": "Op-Bot API",
+        "contact": {},
+        "version": "1.0.0"
+    },
+    "basePath": "/",
+    "paths": {
+        "/api/github/deploy": {
+            "post": {
+                "description": "Creates a GitHub repository and deploys the selected theme",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "github"
+                ],
+                "summary": "Deploy portfolio theme",
+                "parameters": [
+                    {
+                        "description": "Deploy parameters",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/main.deployParams"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/main.deployResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/main.apiErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/main.apiErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/github/logout": {
+            "post": {
+                "description": "Clears the GitHub auth cookie",
+                "tags": [
+                    "github"
+                ],
+                "summary": "Logout from GitHub",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    }
+                }
+            }
+        },
+        "/api/github/me": {
+            "get": {
+                "description": "Returns the authenticated GitHub user and app installation info",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "github"
+                ],
+                "summary": "Get current GitHub user",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/main.MeResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/main.apiErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/github/repos": {
+            "get": {
+                "description": "Returns the repositories the GitHub app has access to",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "github"
+                ],
+                "summary": "Get current GitHub installations repositories",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/main.apiErrorResponse"
+                        }
+                    },
+                    "502": {
+                        "description": "Unable to load repositories",
+                        "schema": {
+                            "$ref": "#/definitions/main.apiErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/resume/validate": {
+            "post": {
+                "description": "Validates resume data against the RxResume schema",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "resume"
+                ],
+                "summary": "Validate resume JSON",
+                "parameters": [
+                    {
+                        "description": "Resume JSON data to validate",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/main.ValidateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/main.ValidationResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/main.apiErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/github/callback": {
+            "get": {
+                "description": "Handles OAuth callback from GitHub and sets auth cookie",
+                "tags": [
+                    "auth"
+                ],
+                "summary": "GitHub OAuth callback",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "OAuth code",
+                        "name": "code",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "OAuth state",
+                        "name": "state",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "302": {
+                        "description": "Found"
+                    },
+                    "400": {
+                        "description": "Invalid OAuth state",
+                        "schema": {
+                            "$ref": "#/definitions/main.apiErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "OAuth callback failed",
+                        "schema": {
+                            "$ref": "#/definitions/main.apiErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/github/start": {
+            "get": {
+                "description": "Redirects to GitHub for OAuth authorization",
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Start GitHub OAuth flow",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "URL to return to after auth",
+                        "name": "returnTo",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "302": {
+                        "description": "Found"
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/main.apiErrorResponse"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "main.GitHubAppInfo": {
+            "type": "object",
+            "properties": {
+                "installUrl": {
+                    "type": "string",
+                    "example": "https://github.com/apps/myapp/installations/new"
+                },
+                "installationId": {
+                    "type": "integer",
+                    "example": 12345
+                },
+                "installed": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
+        "main.GitHubUser": {
+            "type": "object",
+            "properties": {
+                "avatarUrl": {
+                    "type": "string",
+                    "example": "https://github.com/images/octocat.png"
+                },
+                "login": {
+                    "type": "string",
+                    "example": "octocat"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "The Octocat"
+                }
+            }
+        },
+        "main.MeResponse": {
+            "type": "object",
+            "properties": {
+                "githubApp": {
+                    "$ref": "#/definitions/main.GitHubAppInfo"
+                },
+                "user": {
+                    "$ref": "#/definitions/main.GitHubUser"
+                }
+            }
+        },
+        "main.ValidateRequest": {
+            "type": "object",
+            "properties": {
+                "resumeData": {}
+            }
+        },
+        "main.ValidationResult": {
+            "type": "object",
+            "properties": {
+                "errors": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "valid": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
+        "main.apiErrorPayload": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "details": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "main.apiErrorResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "$ref": "#/definitions/main.apiErrorPayload"
+                }
+            }
+        },
+        "main.deployParams": {
+            "type": "object",
+            "properties": {
+                "privateRepo": {
+                    "type": "boolean"
+                },
+                "repositoryName": {
+                    "type": "string"
+                },
+                "repositoryOwner": {
+                    "type": "string"
+                },
+                "resumeData": {},
+                "theme": {
+                    "type": "string"
+                },
+                "themeRepoLink": {
+                    "type": "string"
+                }
+            }
+        },
+        "main.deployResult": {
+            "type": "object",
+            "properties": {
+                "installationId": {},
+                "pagesUrl": {
+                    "type": "string"
+                },
+                "repoFullName": {
+                    "type": "string"
+                },
+                "repositoryUrl": {
+                    "type": "string"
+                },
+                "reusedExistingRepo": {
+                    "type": "boolean"
+                }
+            }
+        }
+    }
+}

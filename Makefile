@@ -3,6 +3,7 @@ TAG    ?= latest
 PORT   ?= 8080
 BINARY ?= op-bot
 AIR    ?= $(shell command -v air 2>/dev/null || echo "$(shell go env GOPATH)/bin/air")
+SWAG   ?= $(shell command -v swag 2>/dev/null || echo "$(shell go env GOPATH)/bin/swag")
 
 .PHONY: help dev test build run stop clean env
 
@@ -23,6 +24,9 @@ test: ## Run tests
 
 build: ## Build the binary
 	go build -o $(BINARY) .
+
+swagger: ## Generate Swagger UI docs (requires comments in code)
+	$(SWAG) init -g main.go --output docs && rm -f docs/docs.go docs/swagger.yaml openapi.json
 
 docker-build: ## Build the Docker image
 	docker build -t $(IMAGE):$(TAG) .

@@ -20,6 +20,7 @@ var (
 	httpAddr         string
 	appClientID      string
 	appClientSecret  string
+	geminiModel      string
 	appInstallURL    string
 	oauthCallbackURL string
 	corsOrigins      []string
@@ -30,6 +31,7 @@ var (
 	appID            string
 	appPrivateKey    *rsa.PrivateKey
 	googleAPIKey     string
+	logLevel         string
 )
 
 const (
@@ -84,6 +86,11 @@ func init() {
 	oauthCallbackURL = strings.TrimSpace(os.Getenv("OAUTH_CALLBACK_URL"))
 	appID = strings.TrimSpace(os.Getenv("APP_ID"))
 	googleAPIKey = strings.TrimSpace(os.Getenv("GOOGLE_API_KEY"))
+	geminiModel = strings.TrimSpace(os.Getenv("GEMINI_MODEL"))
+	if geminiModel == "" {
+		geminiModel = "gemini-2.0-flash"
+	}
+	logLevel = strings.TrimSpace(os.Getenv("LOG_LEVEL"))
 	if pkPEM := strings.TrimSpace(os.Getenv("APP_PRIVATE_KEY")); pkPEM != "" {
 		pkPEM = strings.ReplaceAll(pkPEM, `\n`, "\n")
 		if block, _ := pem.Decode([]byte(pkPEM)); block != nil {

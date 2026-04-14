@@ -597,4 +597,3 @@ func handleAPIResumeParsePDF(w http.ResponseWriter, r *http.Request) {
 		"validationWarnings": []string{},
 	})
 }
-

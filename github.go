@@ -277,12 +277,15 @@ func commitAllFiles(token, owner, repo, branch, message string, files []fileEntr
 }
 
 type deployParams struct {
-	Theme           string `json:"theme"`
-	RepositoryName  string `json:"repositoryName"`
-	RepositoryOwner string `json:"repositoryOwner,omitempty"`
-	PrivateRepo     bool   `json:"privateRepo"`
-	ResumeData      any    `json:"resumeData"`
-	ThemeRepoLink   string `json:"themeRepoLink"`
+	Theme             string `json:"theme"`
+	RepositoryName    string `json:"repositoryName"`
+	RepositoryOwner   string `json:"repositoryOwner,omitempty"`
+	PrivateRepo       bool   `json:"privateRepo"`
+	ResumeData        any    `json:"resumeData"`
+	ThemeRepoLink     string `json:"themeRepoLink"`
+	Description       string `json:"description,omitempty"`
+	HomepageURL       string `json:"homepageUrl,omitempty"`
+	UseGitHubPagesURL bool   `json:"useGitHubPagesUrl,omitempty"`
 }
 
 type parsedThemeRepo struct {
@@ -510,12 +513,34 @@ func createRepositoryAndDeployTheme(ctx context.Context, userToken, userLogin st
 		)
 	}
 
+	pagesURL := fmt.Sprintf("https://%s.github.io/%s/", repositoryOwner, repositoryName)
+	aboutPatch := map[string]any{}
+	if params.Description != "" {
+		aboutPatch["description"] = params.Description
+	}
+	switch {
+	case params.UseGitHubPagesURL:
+		aboutPatch["homepage"] = pagesURL
+	case params.HomepageURL != "":
+		aboutPatch["homepage"] = params.HomepageURL
+	}
+	if len(aboutPatch) > 0 {
+		if _, err := ghRequest(userToken, fmt.Sprintf("/repos/%s/%s", repositoryOwner, repositoryName), http.MethodPatch, aboutPatch); err != nil {
+			slog.WarnContext(ctx, "deploy.about_update_failed",
+				"request_id", requestIDFromContext(ctx),
+				"repo_owner", repositoryOwner,
+				"repo_name", repositoryName,
+				"error", err,
+			)
+		}
+	}
+
 	htmlURL, _ := repo["html_url"].(string)
 	fullName, _ := repo["full_name"].(string)
 
 	return &deployResult{
 		RepositoryURL:  htmlURL,
-		PagesURL:       fmt.Sprintf("https://%s.github.io/%s/", repositoryOwner, repositoryName),
+		PagesURL:       pagesURL,
 		RepoFullName:   fullName,
 		ReusedExisting: reusedExisting,
 	}, nil

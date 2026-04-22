@@ -182,8 +182,44 @@ func fetchThemeFiles(theme, sourceRepo, sourceRef, sourceSubDir string) ([]fileE
 	if len(entries) == 0 {
 		return nil, fmt.Errorf("theme %q has no deployable files", theme)
 	}
+	if err := validateThemeFiles(entries); err != nil {
+		return nil, fmt.Errorf("theme %q is missing required files: %w", theme, err)
+	}
 
 	return entries, nil
+}
+
+func validateThemeFiles(entries []fileEntry) error {
+	hasIndex := false
+	hasApp := false
+	hasStyle := false
+
+	for _, entry := range entries {
+		switch path.Base(entry.Path) {
+		case "index.html":
+			hasIndex = true
+		case "app.js":
+			hasApp = true
+		case "style.css":
+			hasStyle = true
+		}
+	}
+
+	missing := make([]string, 0, 3)
+	if !hasIndex {
+		missing = append(missing, "index.html")
+	}
+	if !hasApp {
+		missing = append(missing, "app.js")
+	}
+	if !hasStyle {
+		missing = append(missing, "style.css")
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("%s", strings.Join(missing, ", "))
+	}
+
+	return nil
 }
 
 func fetchThemeDirectory(dirPath, sourceRepo, sourceRef string) ([]fileEntry, error) {

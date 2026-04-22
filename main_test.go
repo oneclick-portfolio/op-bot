@@ -97,15 +97,63 @@ func TestParseLogLevel(t *testing.T) {
 	}
 }
 
-func TestValidateTheme(t *testing.T) {
-	if !validateTheme("modern") {
-		t.Error("Expected 'modern' theme to be valid")
+func TestValidateThemeFiles(t *testing.T) {
+	tests := []struct {
+		name    string
+		entries []fileEntry
+		wantErr bool
+	}{
+		{
+			name: "valid with style.css",
+			entries: []fileEntry{
+				{Path: "index.html"},
+				{Path: "app.js"},
+				{Path: "style.css"},
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid with styles.css",
+			entries: []fileEntry{
+				{Path: "index.html"},
+				{Path: "nested/app.js"},
+				{Path: "assets/styles.css"},
+			},
+			wantErr: false,
+		},
+		{
+			name: "missing index",
+			entries: []fileEntry{
+				{Path: "app.js"},
+				{Path: "style.css"},
+			},
+			wantErr: true,
+		},
+		{
+			name: "missing app",
+			entries: []fileEntry{
+				{Path: "index.html"},
+				{Path: "style.css"},
+			},
+			wantErr: true,
+		},
+		{
+			name: "missing style",
+			entries: []fileEntry{
+				{Path: "index.html"},
+				{Path: "app.js"},
+			},
+			wantErr: true,
+		},
 	}
-	if !validateTheme("graphic") {
-		t.Error("Expected 'graphic' theme to be valid")
-	}
-	if validateTheme("invalid") {
-		t.Error("Expected 'invalid' theme to be invalid")
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateThemeFiles(tt.entries)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("validateThemeFiles() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
 	}
 }
 

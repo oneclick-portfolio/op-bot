@@ -365,9 +365,6 @@ func createRepositoryAndDeployTheme(ctx context.Context, userToken, userLogin st
 		repositoryOwner = userLogin
 	}
 
-	if !validateTheme(theme) {
-		return nil, &ghError{Message: "Invalid theme selection.", Status: http.StatusBadRequest}
-	}
 	if repositoryName == "" {
 		return nil, &ghError{Message: "Repository name is required.", Status: http.StatusBadRequest}
 	}

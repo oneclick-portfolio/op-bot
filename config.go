@@ -46,29 +46,6 @@ const (
 	sharedAssetsRef  = "main"
 )
 
-var themeFiles = map[string]map[string]string{
-	"modern": {
-		"index": "themes/modern/index.html",
-		"app":   "themes/modern/app.js",
-		"style": "themes/modern/styles.css",
-	},
-	"graphic": {
-		"index": "themes/graphic/index.html",
-		"app":   "themes/graphic/app.js",
-		"style": "themes/graphic/style.css",
-	},
-	"newspaper": {
-		"index": "themes/newspaper/index.html",
-		"app":   "themes/newspaper/app.js",
-		"style": "themes/newspaper/style.css",
-	},
-	"vscode": {
-		"index": "themes/vscode/index.html",
-		"app":   "themes/vscode/app.js",
-		"style": "themes/vscode/style.css",
-	},
-}
-
 func init() {
 	exe, _ := os.Executable()
 	exeDir := filepath.Dir(exe)
@@ -133,11 +110,6 @@ func normalizeInstallURL(u string) string {
 		return strings.TrimSuffix(u, "/") + "/installations/new"
 	}
 	return u
-}
-
-func validateTheme(theme string) bool {
-	_, ok := themeFiles[theme]
-	return ok
 }
 
 func normalizeRepoName(name string) string {

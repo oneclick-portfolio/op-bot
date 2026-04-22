@@ -59,7 +59,7 @@ jobs:
 `
 }
 
-func buildRepositoryReadme(themeName, owner, repoName, pagesURL, themeRepoLink string) string {
+func buildRepositoryReadme(themeName, owner, pagesURL, themeRepoLink string) string {
 	return fmt.Sprintf(`# %s's Portfolio
 
 Deployed using the **%s** theme from [OneClick Portfolio Bot](https://github.com/oneclick-portfolio/op-bot).
@@ -143,7 +143,7 @@ func buildThemeBundle(theme, owner, repoName string, resumeData any, sourceRepo,
 
 	entries = append(entries,
 		fileEntry{Path: ".github/workflows/deploy-pages.yml", Content: []byte(buildWorkflowYaml())},
-		fileEntry{Path: "README.md", Content: []byte(buildRepositoryReadme(getThemeLabel(theme), owner, repoName, pagesURL, themeRepoLink))},
+		fileEntry{Path: "README.md", Content: []byte(buildRepositoryReadme(getThemeLabel(theme), owner, pagesURL, themeRepoLink))},
 	)
 
 	return entries, nil

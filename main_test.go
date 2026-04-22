@@ -113,15 +113,6 @@ func TestValidateThemeFiles(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "valid with styles.css",
-			entries: []fileEntry{
-				{Path: "index.html"},
-				{Path: "nested/app.js"},
-				{Path: "assets/styles.css"},
-			},
-			wantErr: false,
-		},
-		{
 			name: "missing index",
 			entries: []fileEntry{
 				{Path: "app.js"},

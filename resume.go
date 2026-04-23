@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"op-bot/internal/models"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,11 +21,6 @@ import (
 const resumeSchemaURL = "https://rxresu.me/schema.json"
 
 const resumeSchemaFetchTimeout = 5 * time.Second
-
-type validationResult struct {
-	Valid  bool     `json:"valid"`
-	Errors []string `json:"errors"`
-}
 
 func getResumeSchema() (*jsonschema.Schema, error) {
 	resumeSchemaOnce.Do(func() {
@@ -151,20 +147,20 @@ func formatSchemaErrors(err error) []string {
 	return errors
 }
 
-func validateResumeData(data any) validationResult {
+func validateResumeData(data any) models.ValidationResult {
 	if data == nil {
-		return validationResult{Valid: false, Errors: []string{"/ must be a JSON object"}}
+		return models.ValidationResult{Valid: false, Errors: []string{"/ must be a JSON object"}}
 	}
 	obj, ok := data.(map[string]any)
 	if !ok {
-		return validationResult{Valid: false, Errors: []string{"/ must be a JSON object"}}
+		return models.ValidationResult{Valid: false, Errors: []string{"/ must be a JSON object"}}
 	}
 	schema, err := getResumeSchema()
 	if err != nil {
-		return validationResult{Valid: false, Errors: []string{err.Error()}}
+		return models.ValidationResult{Valid: false, Errors: []string{err.Error()}}
 	}
 	if err := schema.Validate(obj); err != nil {
-		return validationResult{Valid: false, Errors: formatSchemaErrors(err)}
+		return models.ValidationResult{Valid: false, Errors: formatSchemaErrors(err)}
 	}
-	return validationResult{Valid: true, Errors: []string{}}
+	return models.ValidationResult{Valid: true, Errors: []string{}}
 }

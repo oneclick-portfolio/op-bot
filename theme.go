@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"op-bot/internal/utils"
 	"path"
 	"strings"
 )
@@ -143,7 +144,7 @@ func buildThemeBundle(theme, owner, repoName string, resumeData any, sourceRepo,
 
 	entries = append(entries,
 		fileEntry{Path: ".github/workflows/deploy-pages.yml", Content: []byte(buildWorkflowYaml())},
-		fileEntry{Path: "README.md", Content: []byte(buildRepositoryReadme(getThemeLabel(theme), owner, pagesURL, themeRepoLink))},
+		fileEntry{Path: "README.md", Content: []byte(buildRepositoryReadme(utils.GetThemeLabel(theme), owner, pagesURL, themeRepoLink))},
 	)
 
 	return entries, nil

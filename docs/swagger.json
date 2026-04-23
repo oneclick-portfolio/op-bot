@@ -289,7 +289,7 @@
             "properties": {
                 "installUrl": {
                     "type": "string",
-                    "example": "https://github.com/apps/myapp/installations/new"
+                    "example": "https://github.com/apps/myapp"
                 },
                 "installationId": {
                     "type": "integer",

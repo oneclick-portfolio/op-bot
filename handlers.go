@@ -11,6 +11,9 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"op-bot/internal/models"
+	"op-bot/internal/services"
+	"op-bot/internal/utils"
 )
 
 //go:embed docs/swagger.json
@@ -87,8 +90,8 @@ func handleAuthGitHubStart(w http.ResponseWriter, r *http.Request) {
 		returnTo = "/"
 	}
 
-	setCookie(w, oauthStateCookie, state, 600, isProduction())
-	setCookie(w, oauthReturnCookie, returnTo, 600, isProduction())
+	setCookie(w, oauthStateCookie, state, 600, utils.IsProduction())
+	setCookie(w, oauthReturnCookie, returnTo, 600, utils.IsProduction())
 
 	authURL, err := url.Parse("https://github.com/login/oauth/authorize")
 	if err != nil {
@@ -192,7 +195,7 @@ func handleAuthGitHubCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userToken, _ := tokenResp["access_token"].(string)
-	setCookie(w, oauthTokenCookie, userToken, 60*60*4, isProduction())
+	setCookie(w, oauthTokenCookie, userToken, 60*60*4, utils.IsProduction())
 
 	redirectURL, err := url.Parse(returnTo)
 	if err != nil {
@@ -236,34 +239,7 @@ func handleAPIGitHubMe(w http.ResponseWriter, r *http.Request) {
 	login, _ := user["login"].(string)
 	chosenInstallation := pickInstallationForUser(installations, login)
 
-	var installationID any
-	if chosenInstallation != nil {
-		installationID = chosenInstallation["id"]
-	}
-
-	var installURL any
-	if appInstallURL != "" {
-		installURL = appInstallURL
-	}
-
-	var repositorySelection any
-	if chosenInstallation != nil {
-		repositorySelection = chosenInstallation["repository_selection"]
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"user": map[string]any{
-			"login":     user["login"],
-			"name":      user["name"],
-			"avatarUrl": user["avatar_url"],
-		},
-		"githubApp": map[string]any{
-			"installed":           chosenInstallation != nil,
-			"installationId":      installationID,
-			"installUrl":          installURL,
-			"repositorySelection": repositorySelection,
-		},
-	})
+	writeJSON(w, http.StatusOK, services.BuildGitHubMeResponse(user, chosenInstallation, appInstallURL))
 }
 
 // @Summary Get current GitHub installations repositories
@@ -326,39 +302,7 @@ func handleAPIGitHubRepos(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	type repoInfo struct {
-		Name          string `json:"name"`
-		FullName      string `json:"fullName"`
-		Owner         string `json:"owner"`
-		Private       bool   `json:"private"`
-		DefaultBranch string `json:"defaultBranch"`
-		HTMLURL       string `json:"htmlUrl"`
-	}
-	result := make([]repoInfo, 0, len(repos))
-	for _, repo := range repos {
-		owner := ""
-		if ownerObj, ok := repo["owner"].(map[string]any); ok {
-			owner, _ = ownerObj["login"].(string)
-		}
-		name, _ := repo["name"].(string)
-		fullName, _ := repo["full_name"].(string)
-		privateRepo, _ := repo["private"].(bool)
-		defaultBranch, _ := repo["default_branch"].(string)
-		htmlURL, _ := repo["html_url"].(string)
-		result = append(result, repoInfo{
-			Name:          name,
-			FullName:      fullName,
-			Owner:         owner,
-			Private:       privateRepo,
-			DefaultBranch: defaultBranch,
-			HTMLURL:       htmlURL,
-		})
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"installationId": chosenInstallation["id"],
-		"repositories":   result,
-	})
+	writeJSON(w, http.StatusOK, services.BuildGitHubReposResponse(chosenInstallation["id"], repos))
 }
 
 // @Summary Logout from GitHub
@@ -386,9 +330,7 @@ func handleAPIResumeValidate(w http.ResponseWriter, r *http.Request) {
 		"remote_hash", redactRemoteAddr(r.RemoteAddr),
 	)
 
-	var body struct {
-		ResumeData any `json:"resumeData"`
-	}
+	var body models.ValidateRequest
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		slog.WarnContext(r.Context(), "resume.validate.invalid_json",
 			"request_id", requestIDFromContext(r.Context()),
@@ -421,8 +363,8 @@ func handleAPIResumeValidate(w http.ResponseWriter, r *http.Request) {
 // @Tags github
 // @Accept json
 // @Produce json
-// @Param request body deployParams true "Deploy parameters"
-// @Success 200 {object} deployResult
+// @Param request body models.DeployParams true "Deploy parameters"
+// @Success 200 {object} models.DeployResult
 // @Failure 400 {object} apiErrorResponse "Bad Request"
 // @Failure 401 {object} apiErrorResponse "Unauthorized"
 // @Router /api/github/deploy [post]
@@ -433,7 +375,7 @@ func handleAPIGitHubDeploy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var params deployParams
+	var params models.DeployParams
 	if err := json.NewDecoder(r.Body).Decode(&params); err != nil {
 		writeError(w, http.StatusBadRequest, "Invalid request body")
 		return

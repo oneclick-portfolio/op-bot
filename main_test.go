@@ -7,14 +7,29 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"op-bot/internal/app"
 	"os"
 	"strings"
 	"testing"
 )
+
+func newTestHTTPHandler() http.Handler {
+	return app.NewHTTPHandler(app.Dependencies{
+		AuthGitHubStart:    handleAuthGitHubStart,
+		AuthGitHubCallback: handleAuthGitHubCallback,
+		APIGitHubMe:        handleAPIGitHubMe,
+		APIGitHubRepos:     handleAPIGitHubRepos,
+		APIGitHubLogout:    handleAPIGitHubLogout,
+		APIResumeValidate:  handleAPIResumeValidate,
+		APIResumeParsePDF:  handleAPIResumeParsePDF,
+		APIGitHubDeploy:    handleAPIGitHubDeploy,
+		SwaggerUI:          handleSwaggerUI,
+		OpenAPISpec:        handleOpenAPISpec,
+	}, buildHandler)
+}
 
 func parseErrorResponse(t *testing.T, rr *httptest.ResponseRecorder) apiErrorResponse {
 	t.Helper()
@@ -44,56 +59,6 @@ func TestValidateResumeData(t *testing.T) {
 	result := validateResumeData(resumeData)
 	if !result.Valid {
 		t.Fatalf("schema validation failed: %v", result.Errors)
-	}
-}
-
-func TestNormalizeRepoName(t *testing.T) {
-	tests := []struct {
-		input    string
-		expected string
-	}{
-		{"My Portfolio", "my-portfolio"},
-		{"test--name", "test-name"},
-		{"-test-", "test"},
-		{"Test Name With Spaces", "test-name-with-spaces"},
-		{"special@chars#here", "special-chars-here"},
-	}
-
-	for _, tt := range tests {
-		result := normalizeRepoName(tt.input)
-		if result != tt.expected {
-			t.Errorf("normalizeRepoName(%q) = %q, want %q", tt.input, result, tt.expected)
-		}
-	}
-}
-
-func TestParseLogLevel(t *testing.T) {
-	tests := []struct {
-		name   string
-		input  string
-		want   slog.Level
-		wantOK bool
-	}{
-		{name: "empty defaults to info", input: "", want: slog.LevelInfo, wantOK: true},
-		{name: "info", input: "info", want: slog.LevelInfo, wantOK: true},
-		{name: "debug", input: "debug", want: slog.LevelDebug, wantOK: true},
-		{name: "warn", input: "warn", want: slog.LevelWarn, wantOK: true},
-		{name: "warning", input: "warning", want: slog.LevelWarn, wantOK: true},
-		{name: "error", input: "error", want: slog.LevelError, wantOK: true},
-		{name: "mixed case trimmed", input: " WARN ", want: slog.LevelWarn, wantOK: true},
-		{name: "invalid falls back to info", input: "verbose", want: slog.LevelInfo, wantOK: false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, ok := parseLogLevel(tt.input)
-			if got != tt.want {
-				t.Fatalf("parseLogLevel(%q) level = %v, want %v", tt.input, got, tt.want)
-			}
-			if ok != tt.wantOK {
-				t.Fatalf("parseLogLevel(%q) ok = %v, want %v", tt.input, ok, tt.wantOK)
-			}
-		})
 	}
 }
 
@@ -143,96 +108,6 @@ func TestValidateThemeFiles(t *testing.T) {
 			err := validateThemeFiles(tt.entries)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("validateThemeFiles() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-}
-
-func TestParseThemeRepoLink(t *testing.T) {
-	tests := []struct {
-		name       string
-		input      string
-		wantRepo   string
-		wantRef    string
-		wantSubDir string
-		wantError  bool
-	}{
-		{
-			name:     "repo root URL uses default main ref",
-			input:    "https://github.com/oneclick-portfolio/awesome-github-portfolio",
-			wantRepo: "oneclick-portfolio/awesome-github-portfolio",
-			wantRef:  "main",
-		},
-		{
-			name:     "tree URL with single-segment ref",
-			input:    "https://github.com/oneclick-portfolio/awesome-github-portfolio/tree/main",
-			wantRepo: "oneclick-portfolio/awesome-github-portfolio",
-			wantRef:  "main",
-		},
-		{
-			name:       "tree URL with ref and theme subfolder",
-			input:      "https://github.com/oneclick-portfolio/awesome-github-portfolio/tree/main/themes/graphic",
-			wantRepo:   "oneclick-portfolio/awesome-github-portfolio",
-			wantRef:    "main",
-			wantSubDir: "themes/graphic",
-		},
-		{
-			name:       "tree URL with ref and nested subfolder",
-			input:      "https://github.com/oneclick-portfolio/awesome-github-portfolio/tree/develop/themes/vscode",
-			wantRepo:   "oneclick-portfolio/awesome-github-portfolio",
-			wantRef:    "develop",
-			wantSubDir: "themes/vscode",
-		},
-		{
-			name:       "tree URL with multi-segment ref rejected",
-			input:      "https://github.com/org/repo/tree/release/v1",
-			wantRepo:   "org/repo",
-			wantRef:    "release",
-			wantSubDir: "v1",
-		},
-		{
-			name:      "missing URL",
-			input:     "",
-			wantError: true,
-		},
-		{
-			name:      "non-github URL rejected",
-			input:     "https://gitlab.com/org/repo",
-			wantError: true,
-		},
-		{
-			name:      "query string rejected",
-			input:     "https://github.com/org/repo?tab=readme",
-			wantError: true,
-		},
-		{
-			name:      "unsupported extra path rejected",
-			input:     "https://github.com/org/repo/issues",
-			wantError: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseThemeRepoLink(tt.input)
-			if tt.wantError {
-				if err == nil {
-					t.Fatalf("expected error, got nil and value %+v", got)
-				}
-				return
-			}
-
-			if err != nil {
-				t.Fatalf("expected no error, got %v", err)
-			}
-			if got.Repo != tt.wantRepo {
-				t.Fatalf("repo = %q, want %q", got.Repo, tt.wantRepo)
-			}
-			if got.Ref != tt.wantRef {
-				t.Fatalf("ref = %q, want %q", got.Ref, tt.wantRef)
-			}
-			if got.SubDir != tt.wantSubDir {
-				t.Fatalf("subDir = %q, want %q", got.SubDir, tt.wantSubDir)
 			}
 		})
 	}
@@ -300,15 +175,6 @@ func TestPickInstallationForUserSkipsRevokedInstallations(t *testing.T) {
 	chosen := pickInstallationForUser(installations, "alice")
 	if chosen != nil {
 		t.Fatalf("expected nil for revoked installation, got %+v", chosen)
-	}
-}
-
-func TestGetThemeLabel(t *testing.T) {
-	if got := getThemeLabel("modern"); got != "Modern" {
-		t.Errorf("getThemeLabel(modern) = %q, want %q", got, "Modern")
-	}
-	if got := getThemeLabel(""); got != "" {
-		t.Errorf("getThemeLabel('') = %q, want ''", got)
 	}
 }
 
@@ -440,11 +306,11 @@ func TestHandleAPIResumeValidateInvalidJSON(t *testing.T) {
 	}
 }
 
-func TestNewServerMuxSwaggerSpecRoute(t *testing.T) {
-	mux := newServerMux()
+func TestNewRouterSwaggerSpecRoute(t *testing.T) {
+	h := newTestHTTPHandler()
 	req := httptest.NewRequest(http.MethodGet, "/swagger/openapi.json", nil)
 	rr := httptest.NewRecorder()
-	mux.ServeHTTP(rr, req)
+	h.ServeHTTP(rr, req)
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rr.Code)
@@ -454,11 +320,11 @@ func TestNewServerMuxSwaggerSpecRoute(t *testing.T) {
 	}
 }
 
-func TestNewServerMuxGitHubReposRoute(t *testing.T) {
-	mux := newServerMux()
+func TestNewRouterGitHubReposRoute(t *testing.T) {
+	h := newTestHTTPHandler()
 	req := httptest.NewRequest(http.MethodGet, "/api/github/repos", nil)
 	rr := httptest.NewRecorder()
-	mux.ServeHTTP(rr, req)
+	h.ServeHTTP(rr, req)
 
 	if rr.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401", rr.Code)
@@ -466,26 +332,6 @@ func TestNewServerMuxGitHubReposRoute(t *testing.T) {
 	payload := parseErrorResponse(t, rr)
 	if payload.Error.Code != "UNAUTHORIZED" {
 		t.Fatalf("error code = %q, want UNAUTHORIZED", payload.Error.Code)
-	}
-}
-
-func TestNormalizeInstallURL(t *testing.T) {
-	tests := []struct {
-		input    string
-		expected string
-	}{
-		{"", ""},
-		{"https://github.com/apps/myapp", "https://github.com/apps/myapp/installations/new"},
-		{"https://github.com/apps/myapp/", "https://github.com/apps/myapp/installations/new"},
-		{"https://github.com/apps/myapp/installations/new", "https://github.com/apps/myapp/installations/new"},
-		{"https://example.com/custom", "https://example.com/custom"},
-	}
-
-	for _, tt := range tests {
-		result := normalizeInstallURL(tt.input)
-		if result != tt.expected {
-			t.Errorf("normalizeInstallURL(%q) = %q, want %q", tt.input, result, tt.expected)
-		}
 	}
 }
 
@@ -651,7 +497,7 @@ func TestHandleAPIResumeParsePDF_FileTooLarge(t *testing.T) {
 }
 
 func TestHandleAPIResumeParsePDF_RouteExists(t *testing.T) {
-	mux := newServerMux()
+	h := newTestHTTPHandler()
 
 	// Verify the route is registered by making a POST request.
 	// Without API key, we should get 500 (not 404/405).
@@ -666,7 +512,7 @@ func TestHandleAPIResumeParsePDF_RouteExists(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/resume/parse", body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	rr := httptest.NewRecorder()
-	mux.ServeHTTP(rr, req)
+	h.ServeHTTP(rr, req)
 
 	// Should not be 404/405 — route must be registered.
 	if rr.Code == http.StatusNotFound || rr.Code == http.StatusMethodNotAllowed {

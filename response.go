@@ -1,50 +1,26 @@
 package main
 
 import (
-	"encoding/json"
 	"net/http"
+	"op-bot/internal/httpapi/response"
+	"op-bot/internal/models"
 )
 
-type apiErrorPayload struct {
-	Code    string   `json:"code"`
-	Message string   `json:"message"`
-	Details []string `json:"details,omitempty"`
-}
+type apiErrorPayload = models.APIErrorPayload
 
-type apiErrorResponse struct {
-	Error apiErrorPayload `json:"error"`
-}
+type apiErrorResponse = models.APIErrorResponse
 
+// writeJSON is a wrapper for backwards compatibility.
 func writeJSON(w http.ResponseWriter, status int, data any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(data)
+	response.WriteJSON(w, status, data)
 }
 
+// defaultErrorCode is a wrapper for backwards compatibility.
 func defaultErrorCode(status int) string {
-	switch status {
-	case http.StatusBadRequest:
-		return "BAD_REQUEST"
-	case http.StatusUnauthorized:
-		return "UNAUTHORIZED"
-	case http.StatusNotFound:
-		return "NOT_FOUND"
-	case http.StatusInternalServerError:
-		return "INTERNAL_ERROR"
-	default:
-		if status >= 500 {
-			return "INTERNAL_ERROR"
-		}
-		return "REQUEST_FAILED"
-	}
+	return response.DefaultErrorCode(status)
 }
 
+// writeError is a wrapper for backwards compatibility.
 func writeError(w http.ResponseWriter, status int, message string, details ...string) {
-	writeJSON(w, status, apiErrorResponse{
-		Error: apiErrorPayload{
-			Code:    defaultErrorCode(status),
-			Message: message,
-			Details: details,
-		},
-	})
+	response.WriteError(w, status, message, details...)
 }

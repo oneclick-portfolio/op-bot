@@ -1,39 +1,43 @@
 package main
 
 import (
+	"bytes"
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"sync"
 
-	"github.com/joho/godotenv"
+	"op-bot/internal/appctx"
+	"op-bot/internal/utils"
+
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
+// Package-level globals maintained for backward compatibility during migration.
+// These will be removed in Phase 5 as individual packages are updated to use AppContext.
 var (
 	backendDir       string
-	port             string
-	httpAddr         string
+	appPrivateKey    *rsa.PrivateKey
+	appID            string
+	appInstallURL    string
 	appClientID      string
 	appClientSecret  string
-	geminiModel      string
-	appInstallURL    string
+	port             string
+	httpAddr         string
 	oauthCallbackURL string
+	googleAPIKey     string
+	geminiModel      string
 	corsOrigins      []string
 	corsCredentials  bool
 	resumeSchema     *jsonschema.Schema
 	resumeSchemaOnce sync.Once
 	resumeSchemaErr  error
-	appID            string
-	appPrivateKey    *rsa.PrivateKey
-	googleAPIKey     string
-	logLevel         string
 )
 
+// OAuth Cookie Names - constants for backwards compatibility
 const (
 	oauthStateCookie  = "gh_oauth_state"
 	oauthReturnCookie = "gh_oauth_return"
@@ -46,43 +50,31 @@ const (
 	sharedAssetsRef  = "main"
 )
 
-func init() {
+// LoadAppContext loads environment variables and returns an initialized AppContext.
+// This also populates package-level globals for backward compatibility during migration.
+func LoadAppContext() *appctx.AppContext {
 	exe, _ := os.Executable()
 	exeDir := filepath.Dir(exe)
-	backendDir = exeDir
+	backendDir := exeDir
 
-	loadDotEnv(backendDir, exeDir)
+	utils.LoadDotEnv(backendDir, exeDir)
 
+	// Load basic HTTP configuration
 	port = strings.TrimSpace(os.Getenv("PORT"))
 	if port == "" {
 		port = "8080"
 	}
-	appClientID = strings.TrimSpace(os.Getenv("APP_CLIENT_ID"))
-	appClientSecret = strings.TrimSpace(os.Getenv("APP_CLIENT_SECRET"))
-	appInstallURL = normalizeInstallURL(strings.TrimSpace(os.Getenv("APP_INSTALL_URL")))
-	oauthCallbackURL = strings.TrimSpace(os.Getenv("OAUTH_CALLBACK_URL"))
-	appID = strings.TrimSpace(os.Getenv("APP_ID"))
-	googleAPIKey = strings.TrimSpace(os.Getenv("GOOGLE_API_KEY"))
-	geminiModel = strings.TrimSpace(os.Getenv("GEMINI_MODEL"))
-	if geminiModel == "" {
-		geminiModel = "gemini-2.0-flash"
-	}
-	logLevel = strings.TrimSpace(os.Getenv("LOG_LEVEL"))
-	if pkPEM := strings.TrimSpace(os.Getenv("APP_PRIVATE_KEY")); pkPEM != "" {
-		pkPEM = strings.ReplaceAll(pkPEM, `\n`, "\n")
-		if block, _ := pem.Decode([]byte(pkPEM)); block != nil {
-			if key, err := x509.ParsePKCS1PrivateKey(block.Bytes); err == nil {
-				appPrivateKey = key
-			}
-		}
-	}
-	if oauthCallbackURL == "" && !isProduction() {
-		oauthCallbackURL = "http://localhost:" + port + "/auth/github/callback"
-	}
 	httpAddr = ":" + port
 
-	corsOrigins = parseCSVEnv("CORS_ALLOWED_ORIGINS")
-	if len(corsOrigins) == 0 && !isProduction() {
+	// Load OAuth configuration
+	oauthCallbackURL = strings.TrimSpace(os.Getenv("OAUTH_CALLBACK_URL"))
+	if oauthCallbackURL == "" && !utils.IsProduction() {
+		oauthCallbackURL = "http://localhost:" + port + "/auth/github/callback"
+	}
+
+	// Load CORS configuration
+	corsOrigins = utils.ParseCSVEnv("CORS_ALLOWED_ORIGINS")
+	if len(corsOrigins) == 0 && !utils.IsProduction() {
 		corsOrigins = []string{
 			"http://localhost:3000",
 			"http://127.0.0.1:3000",
@@ -97,83 +89,61 @@ func init() {
 			break
 		}
 	}
-}
 
-func normalizeInstallURL(u string) string {
-	if u == "" {
-		return ""
-	}
-	if regexp.MustCompile(`/installations/`).MatchString(u) {
-		return u
-	}
-	if matched, _ := regexp.MatchString(`^https://github\.com/apps/[^/]+/?$`, u); matched {
-		return strings.TrimSuffix(u, "/") + "/installations/new"
-	}
-	return u
-}
+	// Load GitHub App configuration
+	appClientID = strings.TrimSpace(os.Getenv("APP_CLIENT_ID"))
+	appClientSecret = strings.TrimSpace(os.Getenv("APP_CLIENT_SECRET"))
+	appInstallURL = strings.TrimSpace(os.Getenv("APP_INSTALL_URL"))
+	appID = strings.TrimSpace(os.Getenv("APP_ID"))
+	googleAPIKey = strings.TrimSpace(os.Getenv("GOOGLE_API_KEY"))
 
-func normalizeRepoName(name string) string {
-	name = strings.TrimSpace(strings.ToLower(name))
-	re := regexp.MustCompile(`\s+`)
-	name = re.ReplaceAllString(name, "-")
-	re = regexp.MustCompile(`[^a-z0-9._-]`)
-	name = re.ReplaceAllString(name, "-")
-	re = regexp.MustCompile(`-+`)
-	name = re.ReplaceAllString(name, "-")
-	name = strings.Trim(name, "-")
-	if len(name) > 100 {
-		name = name[:100]
+	// Load AI configuration
+	geminiModel = strings.TrimSpace(os.Getenv("GEMINI_MODEL"))
+	if geminiModel == "" {
+		geminiModel = "gemini-3.1-flash-lite-preview"
 	}
-	return name
-}
 
-func getThemeLabel(theme string) string {
-	if len(theme) == 0 {
-		return ""
-	}
-	return strings.ToUpper(theme[:1]) + theme[1:]
-}
+	// Load logging configuration
+	logLevel := strings.TrimSpace(os.Getenv("LOG_LEVEL"))
 
-func isProduction() bool {
-	return os.Getenv("NODE_ENV") == "production"
-}
-
-func loadDotEnv(dirs ...string) {
-	loaded := map[string]struct{}{}
-	for _, dir := range dirs {
-		if dir == "" {
-			continue
-		}
-		candidates := []string{
-			filepath.Join(dir, ".env"),
-			filepath.Join(dir, "..", ".env"),
-		}
-		for _, path := range candidates {
-			if _, seen := loaded[path]; seen {
-				continue
+	// Parse GitHub App private key
+	if pkPEM := strings.TrimSpace(os.Getenv("APP_PRIVATE_KEY")); pkPEM != "" {
+		pkPEM = strings.ReplaceAll(pkPEM, `\n`, "\n")
+		if block, _ := pem.Decode([]byte(pkPEM)); block != nil {
+			if key, err := x509.ParsePKCS1PrivateKey(block.Bytes); err == nil {
+				appPrivateKey = key
 			}
-			if _, err := os.Stat(path); err != nil {
-				continue
-			}
-			_ = godotenv.Load(path)
-			loaded[path] = struct{}{}
 		}
 	}
-}
 
-func parseCSVEnv(key string) []string {
-	raw := strings.TrimSpace(os.Getenv(key))
-	if raw == "" {
-		return nil
-	}
-	parts := strings.Split(raw, ",")
-	result := make([]string, 0, len(parts))
-	for _, p := range parts {
-		v := strings.TrimSpace(p)
-		if v == "" {
-			continue
+	// Load resume schema
+	schemaPath := filepath.Join(backendDir, "schema", "v5.json")
+	if data, err := os.ReadFile(schemaPath); err == nil {
+		if schema, err := jsonschema.UnmarshalJSON(bytes.NewReader(data)); err == nil {
+			resumeSchema = schema.(*jsonschema.Schema)
 		}
-		result = append(result, v)
 	}
-	return result
+
+	return &appctx.AppContext{
+		Port:              port,
+		HTTPAddr:          httpAddr,
+		BackendDir:        backendDir,
+		LogLevel:          logLevel,
+		OAuthCallbackURL:  oauthCallbackURL,
+		OAuthStateCookie:  appctx.OAuthStateCookieName,
+		OAuthReturnCookie: appctx.OAuthReturnCookieName,
+		OAuthTokenCookie:  appctx.OAuthTokenCookieName,
+		AppID:             appID,
+		AppClientID:       appClientID,
+		AppClientSecret:   appClientSecret,
+		AppInstallURL:     appInstallURL,
+		AppPrivateKey:     appPrivateKey,
+		GeminiModel:       geminiModel,
+		GoogleAPIKey:      googleAPIKey,
+		CORSOrigins:       corsOrigins,
+		CORSCredentials:   corsCredentials,
+		ResumeSchema:      resumeSchema,
+		SharedAssetsRepo:  appctx.SharedAssetsRepo,
+		SharedAssetsRef:   appctx.SharedAssetsRef,
+	}
 }

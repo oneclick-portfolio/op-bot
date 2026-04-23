@@ -1,0 +1,12 @@
+.git
+.gitignore
+.vscode
+.air.toml
+.env
+.env.*
+op-bot
+op-bot-server
+bin
+coverage.*
+*.out
+tmp

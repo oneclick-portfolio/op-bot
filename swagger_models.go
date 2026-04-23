@@ -1,32 +1,18 @@
 package main
 
-// GitHubUser represents the GitHub user info
-type GitHubUser struct {
-	Login     string `json:"login" example:"octocat"`
-	Name      string `json:"name" example:"The Octocat"`
-	AvatarUrl string `json:"avatarUrl" example:"https://github.com/images/octocat.png"`
-}
+import "op-bot/internal/models"
 
-// GitHubAppInfo represents the GitHub app installation info
-type GitHubAppInfo struct {
-	Installed      bool   `json:"installed" example:"true"`
-	InstallationId int64  `json:"installationId" example:"12345"`
-	InstallUrl     string `json:"installUrl" example:"https://github.com/apps/myapp/installations/new"`
-}
+// GitHubUser represents the GitHub user info.
+type GitHubUser = models.GitHubUser
 
-// MeResponse represents the response for /api/github/me
-type MeResponse struct {
-	User      GitHubUser    `json:"user"`
-	GitHubApp GitHubAppInfo `json:"githubApp"`
-}
+// GitHubAppInfo represents the GitHub app installation info.
+type GitHubAppInfo = models.GitHubAppInfo
 
-// ValidateRequest represents the validation request body
-type ValidateRequest struct {
-	ResumeData any `json:"resumeData"`
-}
+// MeResponse represents the response for /api/github/me.
+type MeResponse = models.MeResponse
 
-// ValidationResult represents the validation result
-type ValidationResult struct {
-	Valid  bool     `json:"valid" example:"true"`
-	Errors []string `json:"errors"`
-}
+// ValidateRequest represents the validation request body.
+type ValidateRequest = models.ValidateRequest
+
+// ValidationResult represents the validation result.
+type ValidationResult = models.ValidationResult

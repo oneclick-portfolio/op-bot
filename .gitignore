@@ -35,3 +35,7 @@ op-bot-server
 tmp/*
 
 .air.toml
+.agents/skills/*
+.claude/skills/*
+.vscode/*
+skills-lock.json

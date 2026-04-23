@@ -1,21 +1,42 @@
 package main
 
 import (
-	"log/slog"
 	"net/http"
+	"op-bot/internal/app"
+	"op-bot/internal/logging"
 	"time"
 )
 
-//	@title			Op-Bot API
-//	@version		1.0.0
-//	@description	Backend API for portfolio deployment with GitHub OAuth and resume validation. Runs as a microservice separate from the frontend.
-//	@BasePath		/
+// @title			Op-Bot API
+// @version		1.0.0
+// @description	Backend API for portfolio deployment with GitHub OAuth and resume validation. Runs as a microservice separate from the frontend.
+// @BasePath		/
 func main() {
-	setupLogger()
+	// Load configuration into AppContext
+	ctx := LoadAppContext()
+	defer func() {
+		if ctx.Logger != nil {
+			ctx.Logger.Info("server.shutdown")
+		}
+	}()
 
-	handler := buildHandler(newServerMux())
+	// Setup logger
+	ctx.Logger = logging.SetupLogger(ctx.LogLevel)
+
+	handler := app.NewHTTPHandler(app.Dependencies{
+		AuthGitHubStart:    handleAuthGitHubStart,
+		AuthGitHubCallback: handleAuthGitHubCallback,
+		APIGitHubMe:        handleAPIGitHubMe,
+		APIGitHubRepos:     handleAPIGitHubRepos,
+		APIGitHubLogout:    handleAPIGitHubLogout,
+		APIResumeValidate:  handleAPIResumeValidate,
+		APIResumeParsePDF:  handleAPIResumeParsePDF,
+		APIGitHubDeploy:    handleAPIGitHubDeploy,
+		SwaggerUI:          handleSwaggerUI,
+		OpenAPISpec:        handleOpenAPISpec,
+	}, buildHandler)
 	server := &http.Server{
-		Addr:              httpAddr,
+		Addr:              ctx.HTTPAddr,
 		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
@@ -24,10 +45,10 @@ func main() {
 		MaxHeaderBytes:    1 << 20,
 	}
 
-	slog.Info("server.starting", "addr", httpAddr, "port", port)
-	slog.Info("server.swagger_ui", "url", "http://localhost:"+port+"/swagger")
+	ctx.Logger.Info("server.starting", "addr", ctx.HTTPAddr, "port", ctx.Port)
+	ctx.Logger.Info("server.swagger_ui", "url", "http://localhost:"+ctx.Port+"/swagger")
 	if err := server.ListenAndServe(); err != nil {
-		slog.Error("server.listen_failed", "error", err)
+		ctx.Logger.Error("server.listen_failed", "error", err)
 		return
 	}
 }

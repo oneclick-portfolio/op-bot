@@ -2,22 +2,74 @@
 
 Go backend API server for GitHub OAuth, portfolio deployment, and resume validation. Runs as a microservice separate from the frontend.
 
-## Files
+## Architecture
 
-- `main.go`: API server
-- `server.go`: HTTP route handlers
-- `github.go`: GitHub API integration
-- `config.go`: environment configuration
-- `handlers.go`: request handlers
-- `middleware.go`: HTTP middleware
-- `main_test.go`: tests
-- `openapi.json`: OpenAPI 3.0 specification
-- `.env.example`: environment template
-- `Makefile`: build commands
+The codebase follows a minimal root structure with most runtime code organized in `internal` packages:
+
+### Root Files (Configuration & Composition)
+- `main.go`: Application entry point, composes AppContext and middleware chain
+- `config.go`: Environment variable loading and AppContext construction
+- `go.mod`, `go.sum`: Dependency management
+- `Makefile`: Build and development commands
+- `README.md`, `LICENSE`: Project documentation
+
+### Root Files (Backwards Compatibility Wrappers)
+These files provide backwards compatibility by delegating to internal packages:
+- `middleware.go` → `internal/httpapi/middleware`
+- `response.go` → `internal/httpapi/response`
+- `appauth.go` → `internal/auth/service`
+- `parse.go` → `internal/ai/pdfparser`
+- `handlers.go`, `github.go`, `theme.go`, `resume.go`: Contain handler implementations (pending extraction)
+- `logging.go`: Delegates to `internal/logging`
+
+### Internal Packages (Business Logic)
+
+**Core Infrastructure:**
+- `internal/appctx/context.go`: AppContext holds all configuration and dependencies
+- `internal/logging/logger.go`: Logger setup and request ID tracking
+- `internal/models/`: API and domain models
+
+**HTTP Layer:**
+- `internal/httpapi/router.go`: Route registration
+- `internal/httpapi/middleware/`: Request logging, CORS, security headers, panic recovery
+- `internal/httpapi/response/`: HTTP response writers and error handlers
+
+**Services & Domain:**
+- `internal/auth/service.go`: GitHub App JWT and installation token operations
+- `internal/ai/pdfparser/`: PDF parsing to JSON using Gemini AI
+- `internal/services/`: Service-layer orchestration (GitHub API, theme building)
+- `internal/repository/`: GitHub API client adapter
+- `internal/utils/`: Utilities (env loading, logging, string helpers)
+
+### Configuration
+
+Create `.env` and `.env.production` files with:
+- `APP_CLIENT_ID`, `APP_CLIENT_SECRET`: GitHub OAuth app credentials
+- `APP_ID`, `APP_PRIVATE_KEY`: GitHub App credentials for deployment
+- `OAUTH_CALLBACK_URL`: OAuth callback URL (auto-configured in non-production)
+- `CORS_ALLOWED_ORIGINS`: CORS allowed origins (defaults to localhost in non-production)
+- `APP_INSTALL_URL` (optional): Custom installation URL
+- `PORT` (optional, default `8080`)
+- `LOG_LEVEL` (optional, default `info`)
+- `GOOGLE_API_KEY`, `GEMINI_MODEL`: AI credentials for PDF parsing
+
+## Build & Development
+
+- `make build`: Build release binary
+- `make test`: Run all tests
+- `make env`: Create development `.env` file
+- `make env-prod`: Create production `.env` file
+
+## Testing
+
+Tests are co-located with source files:
+- `internal/utils/*_test.go`
+- `internal/models/*_test.go`
+- `main_test.go`: Integration tests for the application
 
 ## Environment
 
-Copy `.env.example` to `.env` and set:
+Create `.env` and `.env.production` (or run `make env` and `make env-prod`) and set:
 
 - `APP_CLIENT_ID`
 - `APP_CLIENT_SECRET`
@@ -36,7 +88,14 @@ Notes:
 - If you also need `/api/github/deploy`, `APP_ID` and `APP_PRIVATE_KEY` are required.
 
 ```bash
-cp .env.example .env
+make env
+```
+
+For production template setup:
+
+```bash
+make env-prod
+make check-prod-env
 ```
 
 ## Prerequisites
@@ -105,6 +164,12 @@ make build
 ./op-bot
 ```
 
+Production binary build:
+
+```bash
+make build-prod
+```
+
 ## Docker
 
 ```bash
@@ -113,6 +178,8 @@ make docker-run
 make stop
 make clean
 ```
+
+Note: `make docker-run` expects a populated `.env.production` file.
 
 ## API Documentation
 

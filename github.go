@@ -1,123 +1,44 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
-	"regexp"
+	"op-bot/internal/models"
+	"op-bot/internal/repository"
+	"op-bot/internal/services"
+	"op-bot/internal/utils"
 	"strings"
 	"time"
 )
 
-type ghError struct {
-	Message string
-	Status  int
-}
+type ghError = repository.APIError
 
 type installationAccountInfo struct {
 	Login string
 	Type  string
 }
 
-func (e *ghError) Error() string {
-	return e.Message
-}
+var githubClient = repository.NewGitHubClient(nil)
 
 func ghRequest(token, endpoint, method string, body any) (map[string]any, error) {
-	var reqBody io.Reader
-	if body != nil {
-		data, err := json.Marshal(body)
-		if err != nil {
-			return nil, err
-		}
-		reqBody = bytes.NewReader(data)
-	}
-
-	req, err := http.NewRequest(method, "https://api.github.com"+endpoint, reqBody)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	var payload map[string]any
-	if len(respBody) > 0 {
-		if err := json.Unmarshal(respBody, &payload); err != nil {
-			payload = map[string]any{"message": string(respBody)}
-		}
-	}
-
-	if resp.StatusCode >= 400 {
-		msg := fmt.Sprintf("GitHub API request failed with status %d", resp.StatusCode)
-		if payload != nil {
-			if m, ok := payload["message"].(string); ok && m != "" {
-				msg = m
-			}
-		}
-		return nil, &ghError{Message: msg, Status: resp.StatusCode}
-	}
-
-	return payload, nil
+	return githubClient.Request(token, endpoint, method, body)
 }
 
 func getGitHubUserFromToken(token string) (map[string]any, error) {
-	return ghRequest(token, "/user", http.MethodGet, nil)
+	return githubClient.GetGitHubUserFromToken(token)
 }
 
 func getGitHubInstallationsFromToken(token string) ([]map[string]any, error) {
-	payload, err := ghRequest(token, "/user/installations", http.MethodGet, nil)
-	if err != nil {
-		return nil, err
-	}
-	installations, ok := payload["installations"].([]any)
-	if !ok {
-		return nil, nil
-	}
-	result := make([]map[string]any, 0, len(installations))
-	for _, inst := range installations {
-		if m, ok := inst.(map[string]any); ok {
-			result = append(result, m)
-		}
-	}
-	return result, nil
+	return githubClient.GetGitHubInstallationsFromToken(token)
 }
 
 func getInstallationRepositories(token string) ([]map[string]any, error) {
-	payload, err := ghRequest(token, "/installation/repositories?per_page=100", http.MethodGet, nil)
-	if err != nil {
-		return nil, err
-	}
-	repositories, ok := payload["repositories"].([]any)
-	if !ok {
-		return nil, nil
-	}
-	result := make([]map[string]any, 0, len(repositories))
-	for _, repo := range repositories {
-		if m, ok := repo.(map[string]any); ok {
-			result = append(result, m)
-		}
-	}
-	return result, nil
+	return githubClient.GetInstallationRepositories(token)
 }
 
 func pickInstallationForUser(installations []map[string]any, userLogin string) map[string]any {
@@ -276,90 +197,9 @@ func commitAllFiles(token, owner, repo, branch, message string, files []fileEntr
 	return nil
 }
 
-type deployParams struct {
-	Theme             string `json:"theme"`
-	RepositoryName    string `json:"repositoryName"`
-	RepositoryOwner   string `json:"repositoryOwner,omitempty"`
-	PrivateRepo       bool   `json:"privateRepo"`
-	ResumeData        any    `json:"resumeData"`
-	ThemeRepoLink     string `json:"themeRepoLink"`
-	Description       string `json:"description,omitempty"`
-	HomepageURL       string `json:"homepageUrl,omitempty"`
-	UseGitHubPagesURL bool   `json:"useGitHubPagesUrl,omitempty"`
-}
-
-type parsedThemeRepo struct {
-	Repo   string
-	Ref    string
-	SubDir string // optional subdirectory path within the repo, e.g. "themes/graphic"
-}
-
-var githubRepoSegmentPattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
-
-func parseThemeRepoLink(raw string) (parsedThemeRepo, error) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return parsedThemeRepo{}, fmt.Errorf("themeRepoLink is required")
-	}
-
-	parsed, err := url.Parse(raw)
-	if err != nil {
-		return parsedThemeRepo{}, fmt.Errorf("themeRepoLink must be a valid GitHub URL")
-	}
-
-	host := strings.ToLower(parsed.Hostname())
-	if parsed.Scheme != "https" || host != "github.com" {
-		return parsedThemeRepo{}, fmt.Errorf("themeRepoLink must use https://github.com")
-	}
-	if parsed.RawQuery != "" || parsed.Fragment != "" {
-		return parsedThemeRepo{}, fmt.Errorf("themeRepoLink must not include query parameters or fragments")
-	}
-
-	parts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
-	if len(parts) < 2 {
-		return parsedThemeRepo{}, fmt.Errorf("themeRepoLink must point to a GitHub repository")
-	}
-
-	owner := strings.TrimSpace(parts[0])
-	repo := strings.TrimSpace(parts[1])
-	if !githubRepoSegmentPattern.MatchString(owner) || !githubRepoSegmentPattern.MatchString(repo) {
-		return parsedThemeRepo{}, fmt.Errorf("themeRepoLink contains an invalid owner or repository name")
-	}
-
-	ref := "main"
-	subDir := ""
-	if len(parts) > 2 {
-		if len(parts) < 4 || parts[2] != "tree" {
-			return parsedThemeRepo{}, fmt.Errorf("themeRepoLink must use repository root or /tree/{ref} format")
-		}
-		ref = strings.TrimSpace(parts[3])
-		if ref == "" || strings.Contains(ref, "..") || !githubRepoSegmentPattern.MatchString(ref) {
-			return parsedThemeRepo{}, fmt.Errorf("themeRepoLink contains an invalid ref; ref must be a single path segment with no slashes")
-		}
-		if len(parts) > 4 {
-			for _, seg := range parts[4:] {
-				if seg == "" || strings.Contains(seg, "..") || !githubRepoSegmentPattern.MatchString(seg) {
-					return parsedThemeRepo{}, fmt.Errorf("themeRepoLink contains an invalid path segment")
-				}
-			}
-			subDir = strings.Join(parts[4:], "/")
-		}
-	}
-
-	return parsedThemeRepo{Repo: owner + "/" + repo, Ref: ref, SubDir: subDir}, nil
-}
-
-type deployResult struct {
-	RepositoryURL  string `json:"repositoryUrl"`
-	PagesURL       string `json:"pagesUrl"`
-	RepoFullName   string `json:"repoFullName"`
-	ReusedExisting bool   `json:"reusedExistingRepo"`
-	InstallationID any    `json:"installationId,omitempty"`
-}
-
-func createRepositoryAndDeployTheme(ctx context.Context, userToken, userLogin string, installation map[string]any, installationID int64, params deployParams) (*deployResult, error) {
+func createRepositoryAndDeployTheme(ctx context.Context, userToken, userLogin string, installation map[string]any, installationID int64, params models.DeployParams) (*models.DeployResult, error) {
 	theme := params.Theme
-	repositoryName := normalizeRepoName(params.RepositoryName)
+	repositoryName := utils.NormalizeRepoName(params.RepositoryName)
 	repositoryOwner := strings.TrimSpace(params.RepositoryOwner)
 	if repositoryOwner == "" {
 		repositoryOwner = userLogin
@@ -372,7 +212,7 @@ func createRepositoryAndDeployTheme(ctx context.Context, userToken, userLogin st
 		return nil, &ghError{Message: "Repository owner must match your personal GitHub account for deploy creation.", Status: http.StatusBadRequest}
 	}
 
-	themeSource, err := parseThemeRepoLink(params.ThemeRepoLink)
+	themeSource, err := services.ParseThemeRepoLink(params.ThemeRepoLink)
 	if err != nil {
 		return nil, &ghError{Message: err.Error(), Status: http.StatusBadRequest}
 	}
@@ -535,7 +375,7 @@ func createRepositoryAndDeployTheme(ctx context.Context, userToken, userLogin st
 	htmlURL, _ := repo["html_url"].(string)
 	fullName, _ := repo["full_name"].(string)
 
-	return &deployResult{
+	return &models.DeployResult{
 		RepositoryURL:  htmlURL,
 		PagesURL:       pagesURL,
 		RepoFullName:   fullName,

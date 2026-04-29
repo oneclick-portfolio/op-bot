@@ -28,7 +28,7 @@
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/main.deployParams"
+                            "$ref": "#/definitions/models.DeployParams"
                         }
                     }
                 ],
@@ -36,19 +36,19 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/main.deployResult"
+                            "$ref": "#/definitions/models.DeployResult"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/main.apiErrorResponse"
+                            "$ref": "#/definitions/models.APIErrorResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/main.apiErrorResponse"
+                            "$ref": "#/definitions/models.APIErrorResponse"
                         }
                     }
                 }
@@ -82,13 +82,13 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/main.MeResponse"
+                            "$ref": "#/definitions/models.MeResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/main.apiErrorResponse"
+                            "$ref": "#/definitions/models.APIErrorResponse"
                         }
                     }
                 }
@@ -115,13 +115,13 @@
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/main.apiErrorResponse"
+                            "$ref": "#/definitions/models.APIErrorResponse"
                         }
                     },
                     "502": {
                         "description": "Unable to load repositories",
                         "schema": {
-                            "$ref": "#/definitions/main.apiErrorResponse"
+                            "$ref": "#/definitions/models.APIErrorResponse"
                         }
                     }
                 }
@@ -160,13 +160,13 @@
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/main.apiErrorResponse"
+                            "$ref": "#/definitions/models.APIErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/main.apiErrorResponse"
+                            "$ref": "#/definitions/models.APIErrorResponse"
                         }
                     }
                 }
@@ -192,7 +192,7 @@
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/main.ValidateRequest"
+                            "$ref": "#/definitions/models.ValidateRequest"
                         }
                     }
                 ],
@@ -200,13 +200,13 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/main.ValidationResult"
+                            "$ref": "#/definitions/models.ValidationResult"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/main.apiErrorResponse"
+                            "$ref": "#/definitions/models.APIErrorResponse"
                         }
                     }
                 }
@@ -242,13 +242,13 @@
                     "400": {
                         "description": "Invalid OAuth state",
                         "schema": {
-                            "$ref": "#/definitions/main.apiErrorResponse"
+                            "$ref": "#/definitions/models.APIErrorResponse"
                         }
                     },
                     "500": {
                         "description": "OAuth callback failed",
                         "schema": {
-                            "$ref": "#/definitions/main.apiErrorResponse"
+                            "$ref": "#/definitions/models.APIErrorResponse"
                         }
                     }
                 }
@@ -276,7 +276,7 @@
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/main.apiErrorResponse"
+                            "$ref": "#/definitions/models.APIErrorResponse"
                         }
                     }
                 }
@@ -284,73 +284,7 @@
         }
     },
     "definitions": {
-        "main.GitHubAppInfo": {
-            "type": "object",
-            "properties": {
-                "installUrl": {
-                    "type": "string",
-                    "example": "https://github.com/apps/myapp"
-                },
-                "installationId": {
-                    "type": "integer",
-                    "example": 12345
-                },
-                "installed": {
-                    "type": "boolean",
-                    "example": true
-                }
-            }
-        },
-        "main.GitHubUser": {
-            "type": "object",
-            "properties": {
-                "avatarUrl": {
-                    "type": "string",
-                    "example": "https://github.com/images/octocat.png"
-                },
-                "login": {
-                    "type": "string",
-                    "example": "octocat"
-                },
-                "name": {
-                    "type": "string",
-                    "example": "The Octocat"
-                }
-            }
-        },
-        "main.MeResponse": {
-            "type": "object",
-            "properties": {
-                "githubApp": {
-                    "$ref": "#/definitions/main.GitHubAppInfo"
-                },
-                "user": {
-                    "$ref": "#/definitions/main.GitHubUser"
-                }
-            }
-        },
-        "main.ValidateRequest": {
-            "type": "object",
-            "properties": {
-                "resumeData": {}
-            }
-        },
-        "main.ValidationResult": {
-            "type": "object",
-            "properties": {
-                "errors": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "valid": {
-                    "type": "boolean",
-                    "example": true
-                }
-            }
-        },
-        "main.apiErrorPayload": {
+        "models.APIErrorPayload": {
             "type": "object",
             "properties": {
                 "code": {
@@ -367,17 +301,23 @@
                 }
             }
         },
-        "main.apiErrorResponse": {
+        "models.APIErrorResponse": {
             "type": "object",
             "properties": {
                 "error": {
-                    "$ref": "#/definitions/main.apiErrorPayload"
+                    "$ref": "#/definitions/models.APIErrorPayload"
                 }
             }
         },
-        "main.deployParams": {
+        "models.DeployParams": {
             "type": "object",
             "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "homepageUrl": {
+                    "type": "string"
+                },
                 "privateRepo": {
                     "type": "boolean"
                 },
@@ -393,10 +333,13 @@
                 },
                 "themeRepoLink": {
                     "type": "string"
+                },
+                "useGitHubPagesUrl": {
+                    "type": "boolean"
                 }
             }
         },
-        "main.deployResult": {
+        "models.DeployResult": {
             "type": "object",
             "properties": {
                 "installationId": {},
@@ -411,6 +354,72 @@
                 },
                 "reusedExistingRepo": {
                     "type": "boolean"
+                }
+            }
+        },
+        "models.GitHubAppInfo": {
+            "type": "object",
+            "properties": {
+                "installUrl": {
+                    "type": "string",
+                    "example": "https://github.com/apps/myapp"
+                },
+                "installationId": {
+                    "type": "integer",
+                    "example": 12345
+                },
+                "installed": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
+        "models.GitHubUser": {
+            "type": "object",
+            "properties": {
+                "avatarUrl": {
+                    "type": "string",
+                    "example": "https://github.com/images/octocat.png"
+                },
+                "login": {
+                    "type": "string",
+                    "example": "octocat"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "The Octocat"
+                }
+            }
+        },
+        "models.MeResponse": {
+            "type": "object",
+            "properties": {
+                "githubApp": {
+                    "$ref": "#/definitions/models.GitHubAppInfo"
+                },
+                "user": {
+                    "$ref": "#/definitions/models.GitHubUser"
+                }
+            }
+        },
+        "models.ValidateRequest": {
+            "type": "object",
+            "properties": {
+                "resumeData": {}
+            }
+        },
+        "models.ValidationResult": {
+            "type": "object",
+            "properties": {
+                "errors": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "valid": {
+                    "type": "boolean",
+                    "example": true
                 }
             }
         }

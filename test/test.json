@@ -44,7 +44,8 @@
                     "website": {
                         "url": "https://www.linkedin.com/in/imarinzone/",
                         "label": ""
-                    }
+                    },
+                    "iconColor": ""
                 },
                 {
                     "id": "eq3ffh2cfx7zsqj0b3tx78r7",
@@ -55,7 +56,8 @@
                     "website": {
                         "url": "https://github.com/imarinzone",
                         "label": ""
-                    }
+                    },
+                    "iconColor": ""
                 }
             ]
         },
@@ -73,7 +75,7 @@
                     "company": "Coffeebeans.io",
                     "position": "Software Engineer",
                     "location": "",
-                    "period": "Jan 2025 – March 2026",
+                    "period": "Jan 2025 \u2013 March 2026",
                     "website": {
                         "url": "https://coffeebeans.ai",
                         "label": ""
@@ -90,12 +92,12 @@
                     "company": "UST Global",
                     "position": "Software Engineer - SRE",
                     "location": "",
-                    "period": "Aug 2023 – Oct 2024",
+                    "period": "Aug 2023 \u2013 Oct 2024",
                     "website": {
                         "url": "https://ust.com",
                         "label": "Walmart"
                     },
-                    "description": "<p>Client: <a target=\"_blank\" rel=\"noopener nofollow\" href=\"https://tech.walmart.com\"><strong>Walmart Global Tech</strong></a></p><ul><li><p>Developed an internal testing framework using <strong>Kubernetes</strong> and <strong>Golang</strong>, preventing critical (p0) issues from reaching production and improving system reliability.</p></li><li><p>Implemented <strong>GRPC</strong> and <strong>GraphQL</strong> for Walmart’s prescription-based sales, reducing API calls and ensuring low-latency communication.</p></li></ul><p></p>",
+                    "description": "<p>Client: <a target=\"_blank\" rel=\"noopener nofollow\" href=\"https://tech.walmart.com\"><strong>Walmart Global Tech</strong></a></p><ul><li><p>Developed an internal testing framework using <strong>Kubernetes</strong> and <strong>Golang</strong>, preventing critical (p0) issues from reaching production and improving system reliability.</p></li><li><p>Implemented <strong>GRPC</strong> and <strong>GraphQL</strong> for Walmart\u2019s prescription-based sales, reducing API calls and ensuring low-latency communication.</p></li></ul><p></p>",
                     "roles": []
                 },
                 {
@@ -107,7 +109,7 @@
                     "company": "BYJU'S",
                     "position": "Software Engineer",
                     "location": "",
-                    "period": "Apr 2022 – Jul 2023",
+                    "period": "Apr 2022 \u2013 Jul 2023",
                     "website": {
                         "url": "https://byjus.com",
                         "label": "Byju's"
@@ -124,7 +126,7 @@
                     "company": "Deltek (formally - Replicon)",
                     "position": "Software Engineer",
                     "location": "",
-                    "period": "Aug 2019 – Mar 2022",
+                    "period": "Aug 2019 \u2013 Mar 2022",
                     "website": {
                         "url": "https://replicon.com",
                         "label": "Replicon"
@@ -147,12 +149,12 @@
                     "area": "Computer Science",
                     "grade": "7.0 CGPA",
                     "location": "",
-                    "period": "2015 – 2019",
+                    "period": "2015 \u2013 2019",
                     "website": {
                         "url": "",
                         "label": ""
                     },
-                    "description": "<p>Vemana IT <br>• Bengaluru, Karnataka </p>"
+                    "description": "<p>Vemana IT <br>\u2022 Bengaluru, Karnataka </p>"
                 },
                 {
                     "id": "u891n483t3ua1fhs7wov4fe3",
@@ -167,7 +169,7 @@
                         "url": "",
                         "label": ""
                     },
-                    "description": "<p>K.V. Hebbal <br>• Bengaluru, Karnataka</p>"
+                    "description": "<p>K.V. Hebbal <br>\u2022 Bengaluru, Karnataka</p>"
                 },
                 {
                     "id": "kp2yvtfh0jcoezblgifjeorw",
@@ -182,7 +184,7 @@
                         "url": "",
                         "label": ""
                     },
-                    "description": "<p>K.V. A.F. Station <br>• Barrackpore, West Bengal</p>"
+                    "description": "<p>K.V. A.F. Station <br>\u2022 Barrackpore, West Bengal</p>"
                 }
             ]
         },
@@ -250,7 +252,8 @@
                     "keywords": [
                         "Golang",
                         "Python"
-                    ]
+                    ],
+                    "iconColor": ""
                 },
                 {
                     "id": "u95jz92ma37gv6weyo5asxvu",
@@ -265,7 +268,8 @@
                         "Git",
                         "kafka",
                         "kubernetics"
-                    ]
+                    ],
+                    "iconColor": ""
                 },
                 {
                     "id": "w4681z5e66doxy76zlmyjopf",
@@ -277,7 +281,8 @@
                     "keywords": [
                         "postgreSQL",
                         "MySQL"
-                    ]
+                    ],
+                    "iconColor": ""
                 },
                 {
                     "id": "esvvyeadiynjnmlsqh8hkflj",
@@ -291,7 +296,8 @@
                         "Azure",
                         "GCP",
                         "Tencent/Alibaba"
-                    ]
+                    ],
+                    "iconColor": ""
                 },
                 {
                     "id": "wqsn9w2bx1w5dlfwj8sg6nlq",
@@ -300,7 +306,8 @@
                     "name": "REST APIs / GraphQL / gRPC",
                     "proficiency": "",
                     "level": 0,
-                    "keywords": []
+                    "keywords": [],
+                    "iconColor": ""
                 }
             ]
         },

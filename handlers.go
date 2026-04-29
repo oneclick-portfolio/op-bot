@@ -71,7 +71,7 @@ func requireGitHubAppConfig(w http.ResponseWriter) bool {
 // @Tags auth
 // @Param returnTo query string false "URL to return to after auth"
 // @Success 302
-// @Failure 500 {object} apiErrorResponse
+// @Failure 500 {object} models.APIErrorResponse
 // @Router /auth/github/start [get]
 func handleAuthGitHubStart(w http.ResponseWriter, r *http.Request) {
 	if !requireGitHubAppConfig(w) {
@@ -116,8 +116,8 @@ func handleAuthGitHubStart(w http.ResponseWriter, r *http.Request) {
 // @Param code query string true "OAuth code"
 // @Param state query string true "OAuth state"
 // @Success 302
-// @Failure 400 {object} apiErrorResponse "Invalid OAuth state"
-// @Failure 500 {object} apiErrorResponse "OAuth callback failed"
+// @Failure 400 {object} models.APIErrorResponse "Invalid OAuth state"
+// @Failure 500 {object} models.APIErrorResponse "OAuth callback failed"
 // @Router /auth/github/callback [get]
 func handleAuthGitHubCallback(w http.ResponseWriter, r *http.Request) {
 	if !requireGitHubAppConfig(w) {
@@ -212,8 +212,8 @@ func handleAuthGitHubCallback(w http.ResponseWriter, r *http.Request) {
 // @Description Returns the authenticated GitHub user and app installation info
 // @Tags github
 // @Produce json
-// @Success 200 {object} MeResponse
-// @Failure 401 {object} apiErrorResponse
+// @Success 200 {object} models.MeResponse
+// @Failure 401 {object} models.APIErrorResponse
 // @Router /api/github/me [get]
 func handleAPIGitHubMe(w http.ResponseWriter, r *http.Request) {
 	token := getCookie(r, oauthTokenCookie)
@@ -247,8 +247,8 @@ func handleAPIGitHubMe(w http.ResponseWriter, r *http.Request) {
 // @Tags github
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Failure 401 {object} apiErrorResponse
-// @Failure 502 {object} apiErrorResponse "Unable to load repositories"
+// @Failure 401 {object} models.APIErrorResponse
+// @Failure 502 {object} models.APIErrorResponse "Unable to load repositories"
 // @Router /api/github/repos [get]
 func handleAPIGitHubRepos(w http.ResponseWriter, r *http.Request) {
 	token := getCookie(r, oauthTokenCookie)
@@ -320,9 +320,9 @@ func handleAPIGitHubLogout(w http.ResponseWriter, r *http.Request) {
 // @Tags resume
 // @Accept json
 // @Produce json
-// @Param request body ValidateRequest true "Resume JSON data to validate"
-// @Success 200 {object} ValidationResult
-// @Failure 400 {object} apiErrorResponse "Bad Request"
+// @Param request body models.ValidateRequest true "Resume JSON data to validate"
+// @Success 200 {object} models.ValidationResult
+// @Failure 400 {object} models.APIErrorResponse "Bad Request"
 // @Router /api/resume/validate [post]
 func handleAPIResumeValidate(w http.ResponseWriter, r *http.Request) {
 	slog.InfoContext(r.Context(), "resume.validate.start",
@@ -365,8 +365,8 @@ func handleAPIResumeValidate(w http.ResponseWriter, r *http.Request) {
 // @Produce json
 // @Param request body models.DeployParams true "Deploy parameters"
 // @Success 200 {object} models.DeployResult
-// @Failure 400 {object} apiErrorResponse "Bad Request"
-// @Failure 401 {object} apiErrorResponse "Unauthorized"
+// @Failure 400 {object} models.APIErrorResponse "Bad Request"
+// @Failure 401 {object} models.APIErrorResponse "Unauthorized"
 // @Router /api/github/deploy [post]
 func handleAPIGitHubDeploy(w http.ResponseWriter, r *http.Request) {
 	token := getCookie(r, oauthTokenCookie)
@@ -456,8 +456,8 @@ func handleOpenAPISpec(w http.ResponseWriter, r *http.Request) {
 // @Produce json
 // @Param file formData file true "Resume PDF file (max 5MB)"
 // @Success 200 {object} map[string]interface{}
-// @Failure 400 {object} apiErrorResponse "Bad Request"
-// @Failure 500 {object} apiErrorResponse "Internal Server Error"
+// @Failure 400 {object} models.APIErrorResponse "Bad Request"
+// @Failure 500 {object} models.APIErrorResponse "Internal Server Error"
 // @Router /api/resume/parse [post]
 func handleAPIResumeParsePDF(w http.ResponseWriter, r *http.Request) {
 	slog.InfoContext(r.Context(), "resume.parse.start",

@@ -11,7 +11,7 @@
         },
         "url": {
           "type": "string",
-          "description": "The URL to the picture to display on the resume. Must be a valid URL with a protocol (http:// or https://)."
+          "description": "The URL to the picture to display on the resume. Prefer local app-served paths (for example /uploads/...) populated via upload."
         },
         "size": {
           "type": "number",
@@ -241,6 +241,11 @@
                     "type": "string",
                     "description": "The icon to display for the custom field. Must be a valid icon name from @phosphor-icons/web icon set, or an empty string to hide. Default to '' (empty string) when unsure which icons are available."
                   },
+                  "iconColor": {
+                    "default": "",
+                    "description": "Optional custom color for the icon, defined as rgba(r, g, b, a). Leave blank to use the template default icon color.",
+                    "type": "string"
+                  },
                   "network": {
                     "type": "string",
                     "minLength": 1,
@@ -274,6 +279,7 @@
                   "id",
                   "hidden",
                   "icon",
+                  "iconColor",
                   "network",
                   "username",
                   "website"
@@ -709,6 +715,11 @@
                     "type": "string",
                     "description": "The icon to display for the custom field. Must be a valid icon name from @phosphor-icons/web icon set, or an empty string to hide. Default to '' (empty string) when unsure which icons are available."
                   },
+                  "iconColor": {
+                    "default": "",
+                    "description": "Optional custom color for the icon, defined as rgba(r, g, b, a). Leave blank to use the template default icon color.",
+                    "type": "string"
+                  },
                   "name": {
                     "type": "string",
                     "minLength": 1,
@@ -738,6 +749,7 @@
                   "id",
                   "hidden",
                   "icon",
+                  "iconColor",
                   "name",
                   "proficiency",
                   "level",
@@ -891,6 +903,11 @@
                     "type": "string",
                     "description": "The icon to display for the custom field. Must be a valid icon name from @phosphor-icons/web icon set, or an empty string to hide. Default to '' (empty string) when unsure which icons are available."
                   },
+                  "iconColor": {
+                    "default": "",
+                    "description": "Optional custom color for the icon, defined as rgba(r, g, b, a). Leave blank to use the template default icon color.",
+                    "type": "string"
+                  },
                   "name": {
                     "type": "string",
                     "minLength": 1,
@@ -909,6 +926,7 @@
                   "id",
                   "hidden",
                   "icon",
+                  "iconColor",
                   "name",
                   "keywords"
                 ],
@@ -1639,6 +1657,11 @@
                       "type": "string",
                       "description": "The icon to display for the custom field. Must be a valid icon name from @phosphor-icons/web icon set, or an empty string to hide. Default to '' (empty string) when unsure which icons are available."
                     },
+                    "iconColor": {
+                      "default": "",
+                      "description": "Optional custom color for the icon, defined as rgba(r, g, b, a). Leave blank to use the template default icon color.",
+                      "type": "string"
+                    },
                     "network": {
                       "type": "string",
                       "minLength": 1,
@@ -1672,6 +1695,7 @@
                     "id",
                     "hidden",
                     "icon",
+                    "iconColor",
                     "network",
                     "username",
                     "website"
@@ -1991,6 +2015,11 @@
                       "type": "string",
                       "description": "The icon to display for the custom field. Must be a valid icon name from @phosphor-icons/web icon set, or an empty string to hide. Default to '' (empty string) when unsure which icons are available."
                     },
+                    "iconColor": {
+                      "default": "",
+                      "description": "Optional custom color for the icon, defined as rgba(r, g, b, a). Leave blank to use the template default icon color.",
+                      "type": "string"
+                    },
                     "name": {
                       "type": "string",
                       "minLength": 1,
@@ -2020,6 +2049,7 @@
                     "id",
                     "hidden",
                     "icon",
+                    "iconColor",
                     "name",
                     "proficiency",
                     "level",
@@ -2115,6 +2145,11 @@
                       "type": "string",
                       "description": "The icon to display for the custom field. Must be a valid icon name from @phosphor-icons/web icon set, or an empty string to hide. Default to '' (empty string) when unsure which icons are available."
                     },
+                    "iconColor": {
+                      "default": "",
+                      "description": "Optional custom color for the icon, defined as rgba(r, g, b, a). Leave blank to use the template default icon color.",
+                      "type": "string"
+                    },
                     "name": {
                       "type": "string",
                       "minLength": 1,
@@ -2133,6 +2168,7 @@
                     "id",
                     "hidden",
                     "icon",
+                    "iconColor",
                     "name",
                     "keywords"
                   ],
@@ -2558,6 +2594,7 @@
             "kakuna",
             "lapras",
             "leafish",
+            "meowth",
             "onyx",
             "pikachu",
             "rhyhorn"

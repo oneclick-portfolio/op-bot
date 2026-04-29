@@ -7,8 +7,10 @@ import (
 	"encoding/pem"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"op-bot/internal/appctx"
 	"op-bot/internal/utils"
@@ -35,6 +37,7 @@ var (
 	resumeSchema     *jsonschema.Schema
 	resumeSchemaOnce sync.Once
 	resumeSchemaErr  error
+	sessionManager   *authSessionManager
 )
 
 // OAuth Cookie Names - constants for backwards compatibility
@@ -105,6 +108,15 @@ func LoadAppContext() *appctx.AppContext {
 
 	// Load logging configuration
 	logLevel := strings.TrimSpace(os.Getenv("LOG_LEVEL"))
+
+	// Load auth session configuration
+	authSessionTTL := 4 * time.Hour
+	if rawTTL := strings.TrimSpace(os.Getenv("AUTH_SESSION_TTL_SECONDS")); rawTTL != "" {
+		if ttlSeconds, err := strconv.Atoi(rawTTL); err == nil && ttlSeconds > 0 {
+			authSessionTTL = time.Duration(ttlSeconds) * time.Second
+		}
+	}
+	sessionManager = newAuthSessionManager(authSessionTTL)
 
 	// Parse GitHub App private key
 	if pkPEM := strings.TrimSpace(os.Getenv("APP_PRIVATE_KEY")); pkPEM != "" {

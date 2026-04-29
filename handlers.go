@@ -195,7 +195,11 @@ func handleAuthGitHubCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userToken, _ := tokenResp["access_token"].(string)
-	setCookie(w, oauthTokenCookie, userToken, 60*60*4, utils.IsProduction())
+	sessionKey, err := sessionManager.create(userToken)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Unable to create auth session")
+		return
+	}
 
 	redirectURL, err := url.Parse(returnTo)
 	if err != nil {
@@ -204,6 +208,10 @@ func handleAuthGitHubCallback(w http.ResponseWriter, r *http.Request) {
 	q := redirectURL.Query()
 	q.Set("connected", "1")
 	redirectURL.RawQuery = q.Encode()
+
+	fragment := url.Values{}
+	fragment.Set("session_key", sessionKey)
+	redirectURL.Fragment = fragment.Encode()
 
 	http.Redirect(w, r, redirectURL.String(), http.StatusFound)
 }
@@ -216,8 +224,8 @@ func handleAuthGitHubCallback(w http.ResponseWriter, r *http.Request) {
 // @Failure 401 {object} models.APIErrorResponse
 // @Router /api/github/me [get]
 func handleAPIGitHubMe(w http.ResponseWriter, r *http.Request) {
-	token := getCookie(r, oauthTokenCookie)
-	if token == "" {
+	token, ok := authTokenFromRequest(r)
+	if !ok {
 		writeError(w, http.StatusUnauthorized, "Not connected")
 		return
 	}
@@ -225,7 +233,7 @@ func handleAPIGitHubMe(w http.ResponseWriter, r *http.Request) {
 	user, err := getGitHubUserFromToken(token)
 	if err != nil {
 		if ghErr, ok := err.(*ghError); ok && ghErr.Status == http.StatusUnauthorized {
-			clearCookie(w, oauthTokenCookie)
+			sessionManager.revoke(bearerSessionKey(r))
 		}
 		writeError(w, http.StatusUnauthorized, "GitHub session expired. Please reconnect.")
 		return
@@ -251,8 +259,8 @@ func handleAPIGitHubMe(w http.ResponseWriter, r *http.Request) {
 // @Failure 502 {object} models.APIErrorResponse "Unable to load repositories"
 // @Router /api/github/repos [get]
 func handleAPIGitHubRepos(w http.ResponseWriter, r *http.Request) {
-	token := getCookie(r, oauthTokenCookie)
-	if token == "" {
+	token, ok := authTokenFromRequest(r)
+	if !ok {
 		writeError(w, http.StatusUnauthorized, "Not connected")
 		return
 	}
@@ -260,7 +268,7 @@ func handleAPIGitHubRepos(w http.ResponseWriter, r *http.Request) {
 	user, err := getGitHubUserFromToken(token)
 	if err != nil {
 		if ghErr, ok := err.(*ghError); ok && ghErr.Status == http.StatusUnauthorized {
-			clearCookie(w, oauthTokenCookie)
+			sessionManager.revoke(bearerSessionKey(r))
 		}
 		writeError(w, http.StatusUnauthorized, "GitHub session expired. Please reconnect.")
 		return
@@ -306,12 +314,14 @@ func handleAPIGitHubRepos(w http.ResponseWriter, r *http.Request) {
 }
 
 // @Summary Logout from GitHub
-// @Description Clears the GitHub auth cookie
+// @Description Revokes the current auth session
 // @Tags github
 // @Success 204 "No Content"
 // @Router /api/github/logout [post]
 func handleAPIGitHubLogout(w http.ResponseWriter, r *http.Request) {
-	clearCookie(w, oauthTokenCookie)
+	if sessionManager != nil {
+		sessionManager.revoke(bearerSessionKey(r))
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -369,8 +379,8 @@ func handleAPIResumeValidate(w http.ResponseWriter, r *http.Request) {
 // @Failure 401 {object} models.APIErrorResponse "Unauthorized"
 // @Router /api/github/deploy [post]
 func handleAPIGitHubDeploy(w http.ResponseWriter, r *http.Request) {
-	token := getCookie(r, oauthTokenCookie)
-	if token == "" {
+	token, ok := authTokenFromRequest(r)
+	if !ok {
 		writeError(w, http.StatusUnauthorized, "Connect GitHub first.")
 		return
 	}

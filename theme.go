@@ -144,6 +144,7 @@ func buildThemeBundle(theme, owner, repoName string, resumeData any, sourceRepo,
 
 	entries = append(entries,
 		fileEntry{Path: ".github/workflows/deploy-pages.yml", Content: []byte(buildWorkflowYaml())},
+		fileEntry{Path: "oneclick-ready.js", Content: []byte("window.__oneclickPortfolioReady = true;\n")},
 		fileEntry{Path: "README.md", Content: []byte(buildRepositoryReadme(utils.GetThemeLabel(theme), owner, pagesURL, themeRepoLink))},
 	)
 
@@ -160,11 +161,20 @@ func fetchThemeFiles(theme, sourceRepo, sourceRef, sourceSubDir string) ([]fileE
 		return nil, err
 	}
 
+	return normalizeThemeEntries(theme, dirPath, files)
+
+}
+
+func normalizeThemeEntries(theme, dirPath string, files []fileEntry) ([]fileEntry, error) {
+
 	prefix := dirPath + "/"
 	entries := make([]fileEntry, 0, len(files))
 	for _, f := range files {
 		destination := strings.TrimPrefix(f.Path, prefix)
 		if destination == "" {
+			continue
+		}
+		if shouldExcludeThemeFile(destination) {
 			continue
 		}
 
@@ -188,6 +198,10 @@ func fetchThemeFiles(theme, sourceRepo, sourceRef, sourceSubDir string) ([]fileE
 	}
 
 	return entries, nil
+}
+
+func shouldExcludeThemeFile(filePath string) bool {
+	return strings.EqualFold(path.Base(filePath), "screenshot.png")
 }
 
 func validateThemeFiles(entries []fileEntry) error {
